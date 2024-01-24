@@ -1,34 +1,46 @@
 # driver
+I have only tested this driver in ubuntu 22.04 so far with the kernel `6.5.0-14-generic`. I would have like to cross-compile for 32bit arm and test with qemu via github actions if I had time. 
 
 ## build 
 
-```
+```shell
 cd ./driver
 make
 ```
 
-install / remove module  
-```
+some scripts for installing / removing the module.
+```shell
 ./mod_install.sh
 ./mod_remove.sh
+```
+
+for testing I currently 
+```shell
+cat /dev/vencrypt_read
+echo "this is my string" > /dev/vencrypt_write
+```
+
+I will change the to using `/dev/vencrypt_pt` and `/dev/vencrypt_ct` by change that names in the module init by reading the module praama `encrypt`. I.e. something like:
+```c
+device_create(..., cypher_encrypt ? "/dev/vencrypt_pt" : "/dev/vencrypt_ct")
 ```
 
 
 ## linux kernel formating 
 I used format to clang-format to fomat my code.
-```
+```shell
 clang-format -style=file:clang-format.txt -i ./driver/vencrypt.c
 ```
 The format file I use is https://github.com/torvalds/linux/blob/master/.clang-format
 
 ## machine environment
 my current environment is:
-```
+```shell
 uname -a
 Linux gregc-pc 6.5.0-14-generic #14~22.04.1-Ubuntu SMP PREEMPT_DYNAMIC Mon Nov 20 18:15:30 UTC 2 x86_64 x86_64 x86_64 GNU/Linux
 ```
 
-```
+```shell
 $ gcc-12 -v
 
 Using built-in specs.
