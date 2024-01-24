@@ -1,6 +1,6 @@
 # driver
 I have only tested this driver in ubuntu 22.04 so far with the kernel
-`6.5.0-14-generic`. I would have like to cross-compile for 32bit arm and test
+`6.5.0-14-generic`. I would have to cross-compile for 32bit arm and test
 with qemu via github actions if I had time. 
 
 TODOs:
