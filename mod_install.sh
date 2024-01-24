@@ -12,6 +12,15 @@ if [ $? -eq 0 ]; then
 	sudo rmmod ${module}
 fi
 
-sudo insmod ${module}.ko key=C0FFEE encrypt=1
+module_load_params="key=C0FFEE encrypt=1"
+
+if [ -e ${module}.ko ]; then
+    sudo insmod ${module}.ko ${module_load_params}
+fi
+
+if [ -e ./driver/${module}.ko ]; then
+    sudo insmod ./driver/${module}.ko ${module_load_params}
+fi
+
 sudo chown -R root:${USER} ${wildcard}
 sudo chmod -R 660 ${wildcard}
