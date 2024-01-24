@@ -7,7 +7,6 @@
 #include <linux/wait.h>
 // #include <linux/mutex.h>
 #include <linux/slab.h>
-
 #define DRIVER_NAME "vencrypt"
 #define READ_MINOR 0
 #define WRITE_MINOR 1
@@ -284,18 +283,18 @@ int hex_to_bytes(unsigned char *dst, const char *src, unsigned int dst_size)
 	memset(dst, 0, dst_size);
 
 	if (src[0] == '\0' || l % 2)
-		return -1;
+		return -EINVAL;
 
 	if (l > dst_size * 2)
-		return -1;
+		return -EINVAL;
 
 	for (i = 0; i < l; i += 2) {
 		ms = char_to_nibble(src[i]);
 		if (ms < 0 || ms > 0xff)
-			return -1;
+			return -EINVAL;
 		ls = char_to_nibble(src[i + 1]);
 		if (ls < 0 || ls > 0xff)
-			return -1;
+			return -EINVAL;
 		dst[i / 2] = (ms << 4) + ls;
 	}
 	return 0;
