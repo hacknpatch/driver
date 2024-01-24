@@ -14,7 +14,7 @@ install / remove module
 ```
 
 
-## linux kernel style 
+## linux kernel formating 
 I used format to clang-format to fomat my code.
 ```
 clang-format -style=file:clang-format.txt -i ./driver/vencrypt.c
