@@ -29,7 +29,6 @@ int setup_cipher_context(struct cipher_ctx *ctx, bool encryption_mode,
 {
 	int ret;
 
-	// Allocate a cipher transformation object
 	ctx->tfm = crypto_alloc_skcipher("cbc(aes)", 0, 0);
 	if (IS_ERR(ctx->tfm)) {
 		pr_err("Error allocating cipher handle: %ld\n",
@@ -37,7 +36,6 @@ int setup_cipher_context(struct cipher_ctx *ctx, bool encryption_mode,
 		return PTR_ERR(ctx->tfm);
 	}
 
-	// Allocate a request object
 	ctx->req = skcipher_request_alloc(ctx->tfm, GFP_KERNEL);
 	if (!ctx->req) {
 		pr_err("Failed to allocate skcipher request\n");
@@ -47,17 +45,19 @@ int setup_cipher_context(struct cipher_ctx *ctx, bool encryption_mode,
 
 	ctx->encrypt = encryption_mode;
 
-	// Initialize the IV to a random value
+	/*
+	 * it was reuquest to always use a zero IV :S I might not help me self
+	 * and put the random IV at the start of the encrypted data!	
+	 */
 	get_random_bytes(ctx->iv, sizeof(ctx->iv));
+	/* memset(ctx->iv, 0, sizeof(ctx->iv)); */
 
-	// Initialize the wait completion
 	init_completion(&ctx->wait.completion);
 
-	// Set the key
 	memcpy(ctx->key, key, keylen);
 	ret = crypto_skcipher_setkey(ctx->tfm, ctx->key, keylen);
 	if (ret) {
-		pr_err("Key could not be set: %d\n", ret);
+		pr_err("crypto_skcipher_setkey: %d\n", ret);
 		free_cipher_context(ctx);
 		return ret;
 	}
@@ -70,60 +70,56 @@ int encrypt_block(struct cipher_ctx *ctx, u8 *block, const size_t block_length)
 	int ret;
 
 	sg_init_one(&ctx->sg, block, block_length);
+
 	skcipher_request_set_callback(
 		ctx->req, CRYPTO_TFM_REQ_MAY_BACKLOG | CRYPTO_TFM_REQ_MAY_SLEEP,
 		crypto_req_done, &ctx->wait);
+
 	skcipher_request_set_crypt(ctx->req, &ctx->sg, &ctx->sg, block_length,
 				   ctx->iv);
 
 	ret = crypto_wait_req(crypto_skcipher_encrypt(ctx->req), &ctx->wait);
 	if (ret) {
-		pr_err("Encryption failed: %d\n", ret);
+		pr_err("encrypt_block/crypto_wait_req failed: %d\n", ret);
 		return ret;
 	}
 
-	// For CBC encryption, update IV with the ciphertext of this block
+	/* 
+	 * CBC / IV
+	 */
 	memcpy(ctx->iv, block + block_length - 16, 16);
-
 	return 0;
 }
 
 int decrypt_block(struct cipher_ctx *ctx, u8 *block, const size_t block_length)
 {
 	int ret;
-	u8 next_iv[16]; // Temporary buffer to store the next IV
+	u8 next_iv[16];
 
 	sg_init_one(&ctx->sg, block, block_length);
+
 	skcipher_request_set_callback(
 		ctx->req, CRYPTO_TFM_REQ_MAY_BACKLOG | CRYPTO_TFM_REQ_MAY_SLEEP,
 		crypto_req_done, &ctx->wait);
+
 	skcipher_request_set_crypt(ctx->req, &ctx->sg, &ctx->sg, block_length,
 				   ctx->iv);
 
-	// Save the current ciphertext to be used as the next IV
 	memcpy(next_iv, block, 16);
+	/*
+	 * TODO: consider if I need to handle -EINPROGRESS, -EBUSY, -EAGAIN
+	 */
 	ret = crypto_wait_req(crypto_skcipher_decrypt(ctx->req), &ctx->wait);
 	if (ret) {
-		pr_err("Decryption failed: %d\n", ret);
+		pr_err("decrypt_block/crypto_wait_req failed: %d\n", ret);
 		return ret;
 	}
 
+	/* 
+	 * CBC / IV
+	 */
 	memcpy(ctx->iv, next_iv, 16);
-
 	return 0;
-}
-
-
-void print_hex(u8 *data, size_t len) {
-    char hex_string[len * 2 + 1];
-    int i;
-
-    for (i = 0; i < len; i++) {
-        sprintf(hex_string + i * 2, "%02x", data[i]);
-    }
-
-    hex_string[len * 2] = '\0'; // Null-terminate the string
-    printk(KERN_INFO "%s\n", hex_string);
 }
 
 void test_cipher_with_two_blocks(void)
