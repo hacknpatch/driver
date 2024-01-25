@@ -38,7 +38,7 @@ device_create(..., cypher_encrypt ? "/dev/vencrypt_pt" : "/dev/vencrypt_ct")
 
 
 ## linux kernel formating 
-I used format to clang-format to fomat my code.
+I'm using clang-format to fomat my code.
 ```shell
 clang-format -style=file:clang-format.txt -i ./driver/vencrypt.c
 ```
