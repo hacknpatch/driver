@@ -1,5 +1,5 @@
 # driver
-I have only tested this driver in ubuntu 22.04 so far with the kernel
+I have only tested this driver in ubuntu 22.04 - 64bit x86 so far with the kernel
 `6.5.0-14-generic`. I would like to cross-compile for 32bit arm and test
 with qemu via github actions if I had time [https://github.com/hacknpatch/driver/issues/5]
 
