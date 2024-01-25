@@ -30,7 +30,7 @@ echo "this is my string" > /dev/vencrypt_write
 ```
 
 I will change the to using `/dev/vencrypt_pt` and `/dev/vencrypt_ct` by change 
-that names in the module init by reading the module prama `encrypt`. 
+that names in the module init by reading the module param `encrypt`. 
 I.e. something like:
 ```c
 device_create(..., cypher_encrypt ? "/dev/vencrypt_pt" : "/dev/vencrypt_ct")
