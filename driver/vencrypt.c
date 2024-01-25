@@ -7,15 +7,40 @@
 #include <linux/wait.h>
 // #include <linux/mutex.h>
 #include <linux/slab.h>
+#include <crypto/skcipher.h>
+
 #define DRIVER_NAME "vencrypt"
 #define READ_MINOR 0
 #define WRITE_MINOR 1
 #define CHAR_DEVICES 2
 
-#define CYPHER_KEY_SIZE 16
-#define CYPHER_IV_SIZE 16
+#define CBC_AES_MIN_KEY_SIZE 16
+#define CBC_AES_MAX_KEY_SIZE 32
+
+#define CYPHER_KEY_SIZE CBC_AES_MAX_KEY_SIZE
+#define CYPHER_IV_SIZE 16 /* AES-256 bit */
 #define CYPHER_BLOCK_SIZE 16
+
 #define BUFFER_SIZE CYPHER_BLOCK_SIZE
+
+/*
+ * 
+ * name         : cbc(aes)
+ * driver       : cbc-aes-aesni
+ * module       : aesni_intel
+ * priority     : 400
+ * refcnt       : 1
+ * selftest     : passed
+ * internal     : no
+ *  type         : skcipher
+ * async        : yes
+ * blocksize    : 16
+ * min keysize  : 16
+ * max keysize  : 32
+ * ivsize       : 16
+ * chunksize    : 16
+ * walksize     : 16
+ */
 
 static int cypher_encrypt = 1;
 module_param_named(encrypt, cypher_encrypt, int, S_IRUGO);
@@ -254,13 +279,11 @@ static ssize_t vencrypt_write(struct file *file, const char __user *buf,
 	return to_copy;
 }
 
-static const struct file_operations vencrypt_fops = {
-	.owner          = THIS_MODULE,
-	.open           = vencrypt_open,
-	.read           = vencrypt_read,
-	.write          = vencrypt_write,
-	.release        = vencrypt_release,
-};
+int init_skcipher(struct vencrypt_data *data) 
+{
+	return 0;
+}
+
 
 int char_to_nibble(char c)
 {
@@ -270,7 +293,7 @@ int char_to_nibble(char c)
 		return (unsigned char)(c - 'A' + 10);
 	if ('a' <= c && c <= 'f')
 		return (unsigned char)(c - 'a' + 10);
-	return 0xFF;
+	return -EINVAL;
 }
 
 int hex_to_bytes(unsigned char *dst, const char *src, unsigned int dst_size)
@@ -280,25 +303,36 @@ int hex_to_bytes(unsigned char *dst, const char *src, unsigned int dst_size)
 
 	l = strlen(src);
 
-	memset(dst, 0, dst_size);
-
 	if (src[0] == '\0' || l % 2)
 		return -EINVAL;
 
 	if (l > dst_size * 2)
 		return -EINVAL;
 
+	memset(dst, 0, dst_size);
+
 	for (i = 0; i < l; i += 2) {
 		ms = char_to_nibble(src[i]);
-		if (ms < 0 || ms > 0xff)
+		if (ms < 0)
 			return -EINVAL;
+
 		ls = char_to_nibble(src[i + 1]);
-		if (ls < 0 || ls > 0xff)
+		if (ls < 0)
 			return -EINVAL;
-		dst[i / 2] = (ms << 4) + ls;
+
+		dst[i / 2] = (ms << 4) | ls;
 	}
 	return 0;
 }
+
+
+static const struct file_operations vencrypt_fops = {
+	.owner          = THIS_MODULE,
+	.open           = vencrypt_open,
+	.read           = vencrypt_read,
+	.write          = vencrypt_write,
+	.release        = vencrypt_release,
+};
 
 static int __init vencrypt_init(void)
 {
@@ -358,7 +392,15 @@ static int __init vencrypt_init(void)
 		goto err_free_data;
 	}
 
+	err = init_skcipher(driver_data);
+	if (err)
+		goto err_free_devices;
+
 	return 0;
+
+err_free_devices:
+	device_destroy(driver_device_class, MKDEV(driver_major, READ_MINOR));
+	device_destroy(driver_device_class, MKDEV(driver_major, WRITE_MINOR));
 
 err_free_data:
 	kfree(driver_data);
@@ -383,6 +425,9 @@ static void __exit vencrypt_exit(void)
 	pr_info("%s: Exited\n", DRIVER_NAME);
 }
 
-MODULE_LICENSE("GPL");
+
 module_init(vencrypt_init);
 module_exit(vencrypt_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Greg Chalmers");

@@ -1,5 +1,7 @@
 # m = dynamic module
 obj-m += vencrypt.o
+obj-m += crypto_test.o
+
 # CC := x86_64-linux-gnu-gcc-12
 #CONFIG_MODULE_SIG=n
 
