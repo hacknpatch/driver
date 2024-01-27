@@ -144,6 +144,9 @@ static int vencrypt_open(struct inode *inode, struct file *file)
 					       ctx->state != ST_REVC);
 	}
 
+	if (err)
+		clear_bit_unlock(minor, &ctx->open_flags);
+
 	return err;
 }
 
