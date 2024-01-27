@@ -56,7 +56,7 @@ enum state {
 
 struct vencrypt_ctx {
 	struct cdev cdev;
-	
+
 	char key[CYPHER_KEY_SIZE];
 	char iv[CYPHER_IV_SIZE];
 
@@ -103,15 +103,8 @@ static void encode_buffer(struct vencrypt_ctx *ctx)
 		cypher_encrypt);
 }
 
-static void set_state(struct vencrypt_ctx *ctx, enum state state, int minor,
-	const char *caller)
+static void set_state(struct vencrypt_ctx *ctx, enum state state)
 {
-	pr_info("%s: %s set_state state new:%d old:%d caller: %s\n", DRIVER_NAME,
-		minor == READ_MINOR ? "read" : "write",
-		state,
-		ctx->state,
-		caller);
-	
 	ctx->state = state;
 	wake_up_interruptible(&ctx->state_que);
 }
@@ -122,9 +115,8 @@ static int vencrypt_open(struct inode *inode, struct file *file)
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
 
+	err = 0;
 	minor = iminor(inode);
-
-	// just incase the permissions are not set correctly on the device file
 
 	if (minor == READ_MINOR && file->f_mode & FMODE_WRITE)
 		return -EPERM;
@@ -134,24 +126,22 @@ static int vencrypt_open(struct inode *inode, struct file *file)
 
 	ctx = container_of(inode->i_cdev, struct vencrypt_ctx, cdev);
 
-	// check to see if another reader or write is open.
 	if (test_and_set_bit_lock(minor, &ctx->open_flags))
 		return -EBUSY;
 
 	file->private_data = ctx;
 
 	if (minor == WRITE_MINOR) {
-		err = wait_event_interruptible(ctx->state_que, ctx->state == ST_REVC);
+		err = wait_event_interruptible(ctx->state_que,
+					       ctx->state == ST_REVC);
 		if (!err) {
 			memset(ctx->iv, 0, sizeof(ctx->iv));
 			ctx->buff_size = 0;
 		}
-		
-	} else if (minor == READ_MINOR) {
 
-		if (ctx->buff_size > 0
-			&& wait_event_interruptible(ctx->state_que, ctx->state != ST_REVC))
-			return -ERESTARTSYS;
+	} else if (minor == READ_MINOR && ctx->buff_size > 0) {
+		err = wait_event_interruptible(ctx->state_que,
+					       ctx->state != ST_REVC);
 	}
 
 	return err;
@@ -159,37 +149,39 @@ static int vencrypt_open(struct inode *inode, struct file *file)
 
 static int vencrypt_release(struct inode *inode, struct file *file)
 {
+	int err;
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
 
+	err = 0;
 	minor = iminor(inode);
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
 	if (minor == WRITE_MINOR) {
-		if (wait_event_interruptible(ctx->state_que, ctx->state == ST_REVC)) {
-			clear_bit_unlock(minor, &ctx->open_flags);
-			return -ERESTARTSYS;
-		}
-		pad_block_pkcs7(ctx->buff, ctx->buff_size, BUFFER_SIZE);
-		smp_wmb();
-		set_state(ctx, ST_CLOSING, minor, __func__);		
+		err = wait_event_interruptible(ctx->state_que,
+					       ctx->state == ST_REVC);
 
-	} else if (minor == READ_MINOR) {		
-		if (ctx->buff_size == 0 && ctx->state == ST_CLOSING)
-			set_state(ctx, ST_REVC, minor, __func__);
+		if (!err) {
+			pad_block_pkcs7(ctx->buff, ctx->buff_size, BUFFER_SIZE);
+			smp_wmb();
+			set_state(ctx, ST_CLOSING);
+		}
+
+	} else if (minor == READ_MINOR && ctx->buff_size == 0 &&
+		   ctx->state == ST_CLOSING) {
+		set_state(ctx, ST_REVC);
 	}
 
 	clear_bit_unlock(minor, &ctx->open_flags);
-	return 0;
+	return err;
 }
 
 static ssize_t vencrypt_read(struct file *file, char __user *buf, size_t count,
 			     loff_t *offset)
-{	
+{
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
 	size_t to_copy;
-	ssize_t ret;
 
 	minor = iminor(file_inode(file));
 
@@ -199,37 +191,27 @@ static ssize_t vencrypt_read(struct file *file, char __user *buf, size_t count,
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
 	if (wait_event_interruptible(ctx->state_que,
-		(ctx->state == ST_SEND || ctx->state == ST_CLOSING))) {
-		ret = -ERESTARTSYS;
-		goto leave;
-	}
+				     (ctx->state == ST_SEND ||
+				      ctx->state == ST_CLOSING)))
+		return -ERESTARTSYS;
 
-	/*
-	 * this can happen if the writer has closed, and nothing needs to be
-	 * read, because that last block was 16 bytes i.e. a full block.
-	 */
 	if (ctx->buff_size == 0) {
 		if (ctx->state == ST_SEND)
-			set_state(ctx, ST_REVC, minor, __func__);
-		ret = 0;
-		goto leave;
+			set_state(ctx, ST_REVC);
+		return 0;
 	}
 
 	to_copy = min(ctx->buff_size, count);
-	
+
 	if (copy_to_user(buf, &ctx->buff[0], to_copy))
 		return -EFAULT;
 
 	ctx->buff_size -= to_copy;
 
 	if (ctx->buff_size == 0 && ctx->state == ST_SEND)
-		set_state(ctx, ST_REVC, minor, __func__);
-	
-	ret = (ssize_t)to_copy;
-leave:
-	// pr_info("%s: read buff size:%zu state:%d return(%zu) \n", DRIVER_NAME, 
-	// 	ctx->buff_size, ctx->state, to_copy);
-	return ret;
+		set_state(ctx, ST_REVC);
+
+	return (ssize_t)to_copy;
 }
 
 static ssize_t vencrypt_write(struct file *file, const char __user *buf,
@@ -249,8 +231,9 @@ static ssize_t vencrypt_write(struct file *file, const char __user *buf,
 
 	remaining = BUFFER_SIZE - ctx->buff_size;
 	if (remaining == 0) {
-		set_state(ctx, ST_SEND, minor, __func__);
-		if (wait_event_interruptible(ctx->state_que, ctx->state == ST_REVC))
+		set_state(ctx, ST_SEND);
+		if (wait_event_interruptible(ctx->state_que,
+					     ctx->state == ST_REVC))
 			return -ERESTARTSYS;
 		remaining = BUFFER_SIZE - ctx->buff_size;
 	}
@@ -263,16 +246,15 @@ static ssize_t vencrypt_write(struct file *file, const char __user *buf,
 
 	remaining = BUFFER_SIZE - ctx->buff_size;
 	if (remaining == 0)
-		set_state(ctx, ST_SEND, minor, __func__);
+		set_state(ctx, ST_SEND);
 
 	return to_copy;
 }
 
-int init_skcipher(struct vencrypt_ctx *ctx) 
+int init_skcipher(struct vencrypt_ctx *ctx)
 {
 	return 0;
 }
-
 
 int char_to_nibble(char c)
 {
@@ -314,13 +296,12 @@ int hex_to_bytes(unsigned char *dst, const char *src, unsigned int dst_size)
 	return 0;
 }
 
-
 static const struct file_operations vencrypt_fops = {
-	.owner          = THIS_MODULE,
-	.open           = vencrypt_open,
-	.read           = vencrypt_read,
-	.write          = vencrypt_write,
-	.release        = vencrypt_release,
+	.owner		= THIS_MODULE,
+	.open		= vencrypt_open,
+	.read		= vencrypt_read,
+	.write		= vencrypt_write,
+	.release	= vencrypt_release,
 };
 
 static int __init vencrypt_init(void)
@@ -356,7 +337,7 @@ static int __init vencrypt_init(void)
 	err = cdev_add(&driver_ctx->cdev, driver_dev, 2);
 	if (err)
 		goto err_free_data;
-	
+
 	driver_ctx->buff_size = 0;
 	driver_ctx->state = ST_REVC;
 	init_waitqueue_head(&driver_ctx->state_que);
@@ -411,7 +392,6 @@ static void __exit vencrypt_exit(void)
 
 	pr_info("%s: Exited\n", DRIVER_NAME);
 }
-
 
 module_init(vencrypt_init);
 module_exit(vencrypt_exit);
