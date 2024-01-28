@@ -120,8 +120,10 @@ static int vencrypt_open(struct inode *inode, struct file *file)
 					       ctx->state != ST_REVC);
 	}
 
-	if (err)
+	if (err) {
+		smp_mb__before_atomic();
 		clear_bit_unlock(minor, &ctx->open_flags);
+	}
 
 	return err;
 }
@@ -147,6 +149,7 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 		set_state(ctx, ST_REVC);
 	}
 
+	smp_mb__before_atomic();
 	clear_bit_unlock(minor, &ctx->open_flags);
 	return err;
 }
