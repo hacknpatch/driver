@@ -30,8 +30,7 @@ static struct vencrypt_ctx *driver_ctx;
 static int encode_buf(struct vencrypt_cipher *cipher, struct venc_buffer *buf)
 {
 	int err;
-	// pr_err("%s: encode_buf: size:%zu\n", DRIVER_NAME, buf->size);
-
+	
 	if (buf->size == 0)
 		return 0;
 	/*
