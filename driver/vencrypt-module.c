@@ -1,13 +1,5 @@
-#include <linux/cdev.h>
-#include <linux/fs.h>
-#include <linux/init.h>
 #include <linux/module.h>
-#include <linux/sched.h>
-#include <linux/uaccess.h>
-#include <linux/wait.h>
-// #include <linux/mutex.h>
-#include <linux/slab.h>
-#include <crypto/skcipher.h>
+#include <linux/cdev.h>
 
 #include "vencrypt-buffers.h"
 #include "vencrypt-crypto.h"
