@@ -16,33 +16,7 @@
 #define WRITE_MINOR 1
 #define CHAR_DEVICES 2
 
-#define CBC_AES_MIN_KEY_SIZE 16
-#define CBC_AES_MAX_KEY_SIZE 32
-
-#define CYPHER_KEY_SIZE CBC_AES_MAX_KEY_SIZE
-#define CYPHER_IV_SIZE 16 /* AES-256 bit */
-#define CYPHER_BLOCK_SIZE 16
-
-#define BUFFER_SIZE CYPHER_BLOCK_SIZE
-
-/*
- * 
- * name         : cbc(aes)
- * driver       : cbc-aes-aesni
- * module       : aesni_intel
- * priority     : 400
- * refcnt       : 1
- * selftest     : passed
- * internal     : no
- *  type         : skcipher
- * async        : yes
- * blocksize    : 16
- * min keysize  : 16
- * max keysize  : 32
- * ivsize       : 16
- * chunksize    : 16
- * walksize     : 16
- */
+#define BUFFER_SIZE 16
 
 static int cypher_encrypt = 1;
 module_param_named(encrypt, cypher_encrypt, int, S_IRUGO);
@@ -59,7 +33,7 @@ enum state {
 struct vencrypt_ctx {
 	struct cdev cdev;
 
-	struct cipher_ctx cipher;
+	struct vencrypt_cipher cipher;
 
 	char buff[BUFFER_SIZE];
 	size_t buff_size;
@@ -81,17 +55,23 @@ static int encode_buffer(struct vencrypt_ctx *ctx)
 	int err;
 	if (ctx->buff_size == 0)
 		return 0;
+	/*
+	 * used for tests, i.e. we don't encrypt
+	 */
+	if (cypher_encrypt == 2)
+		return 0;
 	
 	if (cypher_encrypt) {
-		if (ctx->buff_size != BUFFER_SIZE)
+		if (ctx->buff_size != BUFFER_SIZE) {
 			pad_block_pkcs7(ctx->buff, ctx->buff_size, BUFFER_SIZE);
+			ctx->buff_size = BUFFER_SIZE;
+		}
 		err = encrypt_block(&ctx->cipher, ctx->buff, BUFFER_SIZE);
-		ctx->buff_size = BUFFER_SIZE;	
 	} else {
 		err = decrypt_block(&ctx->cipher, ctx->buff, BUFFER_SIZE);
 		ctx->buff_size = block_len_pkcs7(ctx->buff, BUFFER_SIZE);
 	}
-	smp_wmb();
+	// smp_wmb();
 	return err;
 }
 
@@ -189,8 +169,6 @@ static ssize_t vencrypt_read(struct file *file, char __user *buf, size_t count,
 				     (ctx->state == ST_SEND ||
 				      ctx->state == ST_CLOSING)))
 		return -ERESTARTSYS;
-
-	 ctx->state, ctx->buff_size, BUFFER_SIZE, ctx->buff);
 
 	if (ctx->buff_size == 0) {
 		if (ctx->state != ST_CLOSING)
@@ -303,10 +281,17 @@ static int __init vencrypt_init(void)
 	u8 key[32] = {0};
 	int key_len;
 
+	if (cypher_encrypt < 0 || cypher_encrypt > 2)
+	{
+		pr_err("%s: Invalid crypter encrypt=%d choices: 0=decrypt, 1=encrypt, 2=no-encryption\n", 
+		       DRIVER_NAME, cypher_encrypt);
+		return -EINVAL;
+	}
+
 	key_len = strlen(cypher_key) / 2;
-	if (key_len < 16 || key_len > 32) {
-		pr_err("%s: Invalid crypter key length %d it must between 16 and 32\n", 
-		       DRIVER_NAME, key_len);
+	if (key_len < CBC_AES_MIN_KEY_SIZE || key_len > CBC_AES_MAX_KEY_SIZE) {
+		pr_err("%s: Invalid crypter key length %d it must between %d and %d\n", 
+		       DRIVER_NAME, key_len, CBC_AES_MIN_KEY_SIZE, CBC_AES_MAX_KEY_SIZE);
 		return -EINVAL;
 	}
 
@@ -334,7 +319,7 @@ static int __init vencrypt_init(void)
 		goto err_free_data;
 	}
 
-	err = setup_cipher_context(&driver_ctx->cipher, key, sizeof(key));
+	err = init_cipher(&driver_ctx->cipher, key, sizeof(key));
 	if (err) {
 		pr_err("%s: Crypter setup failed err %d\n", DRIVER_NAME, err);
 		goto err_free_data;
@@ -381,7 +366,7 @@ err_free_devices:
 	device_destroy(driver_device_class, MKDEV(driver_major, WRITE_MINOR));
 
 err_free_cipher:
-	free_cipher_context(&driver_ctx->cipher);
+	free_cipher(&driver_ctx->cipher);
 
 err_free_data:
 	kfree(driver_ctx);
@@ -401,7 +386,7 @@ static void __exit vencrypt_exit(void)
 	device_destroy(driver_device_class, MKDEV(driver_major, WRITE_MINOR));
 	class_destroy(driver_device_class);
 	unregister_chrdev_region(driver_dev, CHAR_DEVICES);
-	free_cipher_context(&driver_ctx->cipher);
+	free_cipher(&driver_ctx->cipher);
 	kfree(driver_ctx);
 	pr_info("%s: Exited\n", DRIVER_NAME);
 }

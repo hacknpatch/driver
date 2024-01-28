@@ -1,10 +1,3 @@
-/* GPL-2.0 */
-/*
- * 
- * Authors:
- *   
- */
-
 #ifndef __VENCYPTO_CRYPTO_H
 #define __VENCYPTO_CRYPTO_H
 
@@ -14,8 +7,13 @@
 #include <crypto/skcipher.h>      // for struct skcipher_request
 #include <linux/types.h>          // for bool and u8
 
+#define CBC_AES_MIN_KEY_SIZE 16
+#define CBC_AES_MAX_KEY_SIZE 32
 
-struct cipher_ctx {
+// cipher_engine
+// vencrypt_cipher
+
+struct vencrypt_cipher {
 	struct crypto_skcipher *tfm;
 	struct skcipher_request *req;
 	struct scatterlist sg;
@@ -24,20 +22,18 @@ struct cipher_ctx {
 	u8 key[32]; // AES key (up to 256 bits)
 };
 
-unsigned int block_len_pkcs7(u8 *block, unsigned int block_size);
+size_t block_len_pkcs7(u8 *block, size_t block_size);
+void pad_block_pkcs7(u8 *block, size_t current_size, size_t block_size);
 
-void pad_block_pkcs7(u8 *block, unsigned int current_length,
-		     unsigned int block_size);
-
-int setup_cipher_context(struct cipher_ctx *ctx,
+int init_cipher(struct vencrypt_cipher *cipher,
 			 const u8 *key, unsigned int keylen);
 
-void zero_cipher_iv(struct cipher_ctx *ctx);
-void random_cipher_iv(struct cipher_ctx *ctx);
+void zero_cipher_iv(struct vencrypt_cipher *cipher);
+void random_cipher_iv(struct vencrypt_cipher *cipher);
 
-void free_cipher_context(struct cipher_ctx *ctx);
+void free_cipher(struct vencrypt_cipher *cipher);
 
-int encrypt_block(struct cipher_ctx *ctx, u8 *block, const size_t block_length);
-int decrypt_block(struct cipher_ctx *ctx, u8 *block, const size_t block_length);
+int encrypt_block(struct vencrypt_cipher *cipher, u8 *block, const size_t block_length);
+int decrypt_block(struct vencrypt_cipher *cipher, u8 *block, const size_t block_length);
 
 #endif /* __VENCYPTO_CRYPTO_H */

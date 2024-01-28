@@ -20,7 +20,7 @@
 
 void test_cipher_with_two_blocks(void)
 {
-	struct cipher_ctx ctx;
+	struct vencrypt_cipher ctx;
 	int ret;
 	u8 key[32] = { 0 }; // Define a test key (zero-filled for simplicity)
 	unsigned int keylen = 32; // Set key length (e.g., 32 bytes for AES-256)
@@ -31,7 +31,7 @@ void test_cipher_with_two_blocks(void)
 	u8 original_iv[16];
 
 	// Initialize context for encryption with key
-	ret = setup_cipher_context(&ctx, key, keylen);
+	ret = init_cipher(&ctx, key, keylen);
 	if (ret) {
 		pr_err("Failed to initialize encryption context\n");
 		return;
@@ -46,7 +46,7 @@ void test_cipher_with_two_blocks(void)
 	ret = encrypt_block(&ctx, encrypted_data1, sizeof(encrypted_data1));
 	if (ret) {
 		pr_err("Encryption of block 1 failed\n");
-		free_cipher_context(&ctx);
+		free_cipher(&ctx);
 		return;
 	}
 
@@ -55,12 +55,12 @@ void test_cipher_with_two_blocks(void)
 	ret = encrypt_block(&ctx, encrypted_data2, sizeof(encrypted_data2));
 	if (ret) {
 		pr_err("Encryption of block 2 failed\n");
-		free_cipher_context(&ctx);
+		free_cipher(&ctx);
 		return;
 	}
 
-	free_cipher_context(&ctx);
-	ret = setup_cipher_context(&ctx, key, keylen);
+	free_cipher(&ctx);
+	ret = init_cipher(&ctx, key, keylen);
 	if (ret) {
 		pr_err("Failed to initialize decryption context\n");
 		return;
@@ -73,7 +73,7 @@ void test_cipher_with_two_blocks(void)
 	ret = decrypt_block(&ctx, decrypted_data1, sizeof(decrypted_data1));
 	if (ret) {
 		pr_err("Decryption of block 1 failed\n");
-		free_cipher_context(&ctx);
+		free_cipher(&ctx);
 		return;
 	}
 
@@ -82,7 +82,7 @@ void test_cipher_with_two_blocks(void)
 	ret = decrypt_block(&ctx, decrypted_data2, sizeof(decrypted_data2));
 	if (ret) {
 		pr_err("Decryption of block 2 failed\n");
-		free_cipher_context(&ctx);
+		free_cipher(&ctx);
 		return;
 	}
 
@@ -98,7 +98,7 @@ void test_cipher_with_two_blocks(void)
 	else
 		pr_info("Test passed: Decrypted data matches original data for block 2\n");
 
-	free_cipher_context(&ctx);
+	free_cipher(&ctx);
 	pr_info("Test completed\n");
 }
 
@@ -146,7 +146,7 @@ void test_pkcs7_padding(void)
 
 void test_cipher_hello(void)
 {
-	struct cipher_ctx ctx;
+	struct vencrypt_cipher ctx;
 	int ret;
 	u8 key[32] = { 0 }; // Define a test key (zero-filled for simplicity)
 	unsigned int keylen = 32; // Set key length (e.g., 32 bytes for AES-256)
@@ -156,7 +156,7 @@ void test_cipher_hello(void)
 	u8 original_iv[16];
 
 	// Initialize context for encryption with key
-	ret = setup_cipher_context(&ctx, key, keylen);
+	ret = init_cipher(&ctx, key, keylen);
 	if (ret) {
 		pr_err("Failed to initialize encryption context\n");
 		return;
@@ -171,12 +171,12 @@ void test_cipher_hello(void)
 	ret = encrypt_block(&ctx, encrypted_data1, sizeof(encrypted_data1));
 	if (ret) {
 		pr_err("Encryption of block 1 failed\n");
-		free_cipher_context(&ctx);
+		free_cipher(&ctx);
 		return;
 	}
 	
-	free_cipher_context(&ctx);
-	ret = setup_cipher_context(&ctx, key, keylen);
+	free_cipher(&ctx);
+	ret = init_cipher(&ctx, key, keylen);
 	if (ret) {
 		pr_err("Failed to initialize decryption context\n");
 		return;
@@ -189,7 +189,7 @@ void test_cipher_hello(void)
 	ret = decrypt_block(&ctx, decrypted_data1, sizeof(decrypted_data1));
 	if (ret) {
 		pr_err("Decryption of block 1 failed\n");
-		free_cipher_context(&ctx);
+		free_cipher(&ctx);
 		return;
 	}
 
@@ -199,7 +199,7 @@ void test_cipher_hello(void)
 	else
 		pr_info("Test passed: Decrypted data matches original data for block 1\n");		
 
-	free_cipher_context(&ctx);
+	free_cipher(&ctx);
 
 	pr_info("Test original: %*ph\n", 16, original_data1);
 	pr_info("Test encrypted: %*ph\n", 16, encrypted_data1);
