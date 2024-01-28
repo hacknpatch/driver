@@ -9,17 +9,16 @@
 
 #define CBC_AES_MIN_KEY_SIZE 16
 #define CBC_AES_MAX_KEY_SIZE 32
-
-// cipher_engine
-// vencrypt_cipher
+#define AES_BLOCK_SIZE 16
+#define AES_IV_SIZE 16
 
 struct vencrypt_cipher {
 	struct crypto_skcipher *tfm;
 	struct skcipher_request *req;
 	struct scatterlist sg;
 	struct crypto_wait wait;
-	u8 iv[16];
-	u8 key[32]; // AES key (up to 256 bits)
+	u8 iv[AES_IV_SIZE];
+	u8 key[CBC_AES_MAX_KEY_SIZE];
 };
 
 size_t block_len_pkcs7(u8 *block, size_t block_size);

@@ -16,31 +16,33 @@
 #define WRITE_MINOR 1
 #define CHAR_DEVICES 2
 
-#define BUFFER_SIZE 16
-
 static int mod_param_encrypt = 1;
 module_param_named(encrypt, mod_param_encrypt, int, S_IRUGO);
 
 static char *mod_param_key;
 module_param_named(key, mod_param_key, charp, S_IRUGO);
 
-enum state {
-	ST_REVC = 0,
-	ST_SEND,
-	ST_CLOSING,
+
+#define BUFFER_QUEUE_NUM 10
+
+struct buffer {
+	unsigned char data[AES_BLOCK_SIZE]; /* the data being encrypted or decrypted*/
+	size_t size; /* the number of bytes in data */
+	struct list_head list; /* the list the buffer belongs to free or used.*/
+};
+
+struct buffer_queue {
+	struct buffer buffers[BUFFER_QUEUE_NUM];
+	struct list_head free_list; /* list of buffers not in use */
+	struct list_head used_list; /* list of buffers in use */
+	spinlock_t lock;            /* spinlock around list operations */
+	wait_queue_head_t wait;     /* used for signaling queue changes */
 };
 
 struct vencrypt_ctx {
 	struct cdev cdev;
-
 	struct vencrypt_cipher cipher;
-
-	char buff[BUFFER_SIZE];
-	size_t buff_size;
-
-	enum state state;
-	wait_queue_head_t state_q;
-
+	struct buffer_queue buffer_queue;
 	unsigned long open_flags;
 };
 
@@ -49,11 +51,67 @@ static struct class *driver_device_class;
 static dev_t driver_dev;
 static struct vencrypt_ctx *driver_ctx;
 
+void init_buffer_queue(struct buffer_queue *q)
+{
+	INIT_LIST_HEAD(&q->free_list);
+	INIT_LIST_HEAD(&q->used_list);
+	spin_lock_init(&q->lock);
+	init_waitqueue_head(&q->wait);
 
-static int encode_buffer(struct vencrypt_ctx *ctx)
+	for (int i = 0; i < MAX_BUFFERS; i++) {
+		q->buffers[i].size = 0;
+		list_add(&q->buffers[i].list, &q->free_list);
+	}
+}
+
+struct buffer * get_out_buffer(struct buffer_queue *q)
+{
+	struct buffer *buf;
+	buf = NULL;
+	spin_lock(&q->lock);
+	if (!list_empty(&q->used_list))
+		buf = list_first_entry(&q->used_list, struct buffer, list);	
+	spin_unlock(&q->lock);
+	return buf;
+}
+
+int wait_out_buffer(struct vencrypt_ctx *ctx, struct buffer **buf)
+{
+	return wait_event_interruptible(ctx->buffer_queue.wait,
+		(*buf = get_out_buffer(&ctx->buffer_queue)) != NULL);
+}
+
+void release_read_buffer(struct buffer_queue *q, struct buffer *buf)
+{	
+	buf->size = 0;
+	spin_lock(&q->lock);
+	list_del(&buf->list);
+	list_add(&buf->list, &q->free_list);
+	spin_unlock(&q->lock);
+	wake_up_interruptible(&q->wait);
+}
+
+struct buffer * get_in_buffer(struct buffer_queue *q)
+{
+	struct buffer *buf;
+	buf = NULL;
+	spin_lock(&q->lock);
+	if (!list_empty(&q->free_list))
+		buf = list_first_entry(&q->free_list, struct buffer, list);	
+	spin_unlock(&q->lock);
+	return buf;
+}
+
+int wait_in_buffer(struct vencrypt_ctx *ctx, struct buffer **buf)
+{
+	return wait_event_interruptible(ctx->buffer_queue.wait,
+		(*buf = get_in_buffer(&ctx->buffer_queue)) != NULL);
+}
+
+static int encode_buffer(struct vencrypt_cipher *cipher, struct buffer *buf)
 {
 	int err;
-	if (ctx->buff_size == 0)
+	if (buf->size == 0)
 		return 0;
 	/*
 	 * used for tests, i.e. we don't encrypt
@@ -62,36 +120,37 @@ static int encode_buffer(struct vencrypt_ctx *ctx)
 		return 0;
 	
 	if (mod_param_encrypt) {
-		if (ctx->buff_size != BUFFER_SIZE) {
-			pad_block_pkcs7(ctx->buff, ctx->buff_size, BUFFER_SIZE);
-			ctx->buff_size = BUFFER_SIZE;
+		if (buf->size != sizeof(buf->size)) {
+			pad_block_pkcs7(buf->data, buf->size , sizeof(buf->size));
+			buf->size = sizeof(buf->size);
 		}
-		err = encrypt_block(&ctx->cipher, ctx->buff, BUFFER_SIZE);
+		err = encrypt_block(cipher, buf->data, sizeof(buf->size));
 	} else {
-		err = decrypt_block(&ctx->cipher, ctx->buff, BUFFER_SIZE);
-		ctx->buff_size = block_len_pkcs7(ctx->buff, BUFFER_SIZE);
+		err = decrypt_block(cipher, buf->data, buf->size);
+		buf->size = block_len_pkcs7(buf->data, buf->size);
 	}
+
 	// smp_wmb();
 	return err;
 }
 
-static void set_state(struct vencrypt_ctx *ctx, enum state state)
+void in_buffer_ready(struct vencrypt_cipher *c, 
+			struct buffer_queue *q,
+			struct buffer *buf)
 {
-	if (ctx->state != state) {
-		if (state == ST_SEND || state == ST_CLOSING)
-			encode_buffer(ctx);
-		ctx->state = state;
-	}
-	wake_up_interruptible(&ctx->state_q);
+	encode_buffer(c, buf);
+	spin_lock(&q->lock);
+	list_del(&buf->list); // Remove from free list
+	list_add_tail(&buf->list, &q->used_list); // Add to used list
+	spin_unlock(&q->lock);
+	wake_up_interruptible(&q->wait);
 }
 
 static int vencrypt_open(struct inode *inode, struct file *file)
 {
-	int err;
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
 
-	err = 0;
 	minor = iminor(inode);
 
 	if (minor == READ_MINOR && file->f_mode & FMODE_WRITE)
@@ -107,59 +166,40 @@ static int vencrypt_open(struct inode *inode, struct file *file)
 
 	file->private_data = ctx;
 
-	if (minor == WRITE_MINOR) {
-		err = wait_event_interruptible(ctx->state_q,
-					       ctx->state == ST_REVC);
-		if (!err) {
-			zero_cipher_iv(&ctx->cipher);			
-			ctx->buff_size = 0;
-		}
+	if (minor == WRITE_MINOR)
+		// writer does encryption, so this is safe.
+		zero_cipher_iv(&ctx->cipher);
 
-	} else if (minor == READ_MINOR && ctx->buff_size > 0) {
-		err = wait_event_interruptible(ctx->state_q,
-					       ctx->state != ST_REVC);
-	}
-
-	if (err) {
-		smp_mb__before_atomic();
-		clear_bit_unlock(minor, &ctx->open_flags);
-	}
-
-	return err;
+	return 0;
 }
 
 static int vencrypt_release(struct inode *inode, struct file *file)
 {
-	int err;
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
+	struct buffer *buf;
 
-	err = 0;
 	minor = iminor(inode);
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
-	if (minor == WRITE_MINOR) {
-		err = wait_event_interruptible(ctx->state_q,
-					       ctx->state == ST_REVC);
-		if (!err)			
-			set_state(ctx, ST_CLOSING);
-
-	} else if (minor == READ_MINOR && ctx->buff_size == 0 &&
-		   ctx->state == ST_CLOSING) {
-		set_state(ctx, ST_REVC);
-	}
+	if (minor == WRITE_MINOR
+	   && (buf = get_in_buffer(&ctx->buffer_queue)) != NULL
+	   && buf->size > 0)
+		in_buffer_ready(&ctx->cipher, &ctx->buffer_queue, buf);
 
 	smp_mb__before_atomic();
 	clear_bit_unlock(minor, &ctx->open_flags);
-	return err;
+	return 0;
 }
 
-static ssize_t vencrypt_read(struct file *file, char __user *buf, size_t count,
+static ssize_t vencrypt_read(struct file *file, char __user *user_buf, size_t count,
 			     loff_t *offset)
 {
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
 	size_t to_copy;
+	struct buffer *buf;
+	int err;
 
 	minor = iminor(file_inode(file));
 
@@ -168,37 +208,34 @@ static ssize_t vencrypt_read(struct file *file, char __user *buf, size_t count,
 
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
-	if (wait_event_interruptible(ctx->state_q,
-				     (ctx->state == ST_SEND ||
-				      ctx->state == ST_CLOSING)))
-		return -ERESTARTSYS;
-
-	if (ctx->buff_size == 0) {
-		if (ctx->state != ST_CLOSING)
-			set_state(ctx, ST_REVC);			
+	err = wait_out_buffer(ctx, &buf);
+	if (err)
+		return err;
+	
+	if (buf->size == 0)
 		return 0;
-	}
 
-	to_copy = min(ctx->buff_size, count);
+	to_copy = min(buf->size, count);
 
-	if (copy_to_user(buf, ctx->buff, to_copy))
+	if (copy_to_user(user_buf, buf->data, to_copy))
 		return -EFAULT;
 
-	ctx->buff_size -= to_copy;
+	buf->size -= to_copy;
 
-	if (ctx->buff_size == 0 && ctx->state != ST_CLOSING)
-		set_state(ctx, ST_REVC);
+	if (buf->size == 0)
+		release_read_buffer(&ctx->buffer_queue, buf);
 
 	return (ssize_t)to_copy;
 }
 
-static ssize_t vencrypt_write(struct file *file, const char __user *buf,
+static ssize_t vencrypt_write(struct file *file, const char __user *user_buf,
 			      size_t count, loff_t *offset)
 {
+	int err;
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
-	size_t to_copy;
-	size_t remaining;
+	struct buffer *buf;
+	size_t available, copied;
 
 	minor = iminor(file_inode(file));
 
@@ -206,27 +243,25 @@ static ssize_t vencrypt_write(struct file *file, const char __user *buf,
 		return -EPERM;
 
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
+	
+	err = wait_in_buffer(ctx, &buf);
+	if (err)
+		return err;
 
-	remaining = BUFFER_SIZE - ctx->buff_size;
-	if (remaining == 0) {
-		set_state(ctx, ST_SEND);
-		if (wait_event_interruptible(ctx->state_q,
-					     ctx->state == ST_REVC))
-			return -ERESTARTSYS;
-		remaining = BUFFER_SIZE - ctx->buff_size;
-	}
-	to_copy = min(remaining, count);
-
-	if (copy_from_user(&ctx->buff[ctx->buff_size], buf, to_copy))
+	copied = min(sizeof(buf->data) - buf->size, count);
+	
+	if (copy_from_user(&buf->data[buf->size], user_buf, copied))
 		return -EFAULT;
+	
+	buf->size += copied;
 
-	ctx->buff_size += to_copy;
+	available = sizeof(buf->data) - buf->size;
+	pr_info("%s: write count: %zu offset: %lld buff_size: %zu available: %zu copied:%zu\n",
+		DRIVER_NAME, count, *offset, buf->size, available, copied);
+	if (available == 0)		
+		in_buffer_ready(&ctx->cipher, &ctx->buffer_queue, buf);
 
-	remaining = BUFFER_SIZE - ctx->buff_size;
-	if (remaining == 0)		
-		set_state(ctx, ST_SEND);
-
-	return to_copy;
+	return copied;
 }
 
 int char_to_nibble(char c)
@@ -339,7 +374,7 @@ static int __init vencrypt_init(void)
 		err = -ENOMEM;
 		goto err_destroy_class;
 	}
-
+	
 	err = hex_to_bytes(key, mod_param_key, key_len);
 	if (err) {		
 		pr_err("%s: Crypter key is invalid hex\n", DRIVER_NAME);
@@ -350,18 +385,16 @@ static int __init vencrypt_init(void)
 	if (err) {
 		pr_err("%s: Crypter setup failed err %d\n", DRIVER_NAME, err);
 		goto err_free_data;
-	}
+	}	
 	
+	init_buffer_queue(&driver_ctx->buffer_queue);
+
 	cdev_init(&driver_ctx->cdev, &vencrypt_fops);
 	driver_ctx->cdev.owner = THIS_MODULE;
 
 	err = cdev_add(&driver_ctx->cdev, driver_dev, 2);
 	if (err)
 		goto err_free_cipher;
-
-	driver_ctx->buff_size = 0;
-	driver_ctx->state = ST_REVC;
-	init_waitqueue_head(&driver_ctx->state_q);
 
 	dev = device_create(driver_device_class, NULL,
 			    MKDEV(driver_major, READ_MINOR), driver_ctx,
