@@ -9,6 +9,7 @@
 #include <linux/slab.h>
 #include <crypto/skcipher.h>
 
+#include "vencrypt-buffers.h"
 #include "vencrypt-crypto.h"
 
 #define DRIVER_NAME "vencrypt"
@@ -22,27 +23,10 @@ module_param_named(encrypt, mod_param_encrypt, int, S_IRUGO);
 static char *mod_param_key;
 module_param_named(key, mod_param_key, charp, S_IRUGO);
 
-
-#define BUFFER_QUEUE_NUM 10
-
-struct buffer {
-	unsigned char data[AES_BLOCK_SIZE]; /* the data being encrypted or decrypted*/
-	size_t size; /* the number of bytes in data */
-	struct list_head list; /* the list the buffer belongs to free or used.*/
-};
-
-struct buffer_queue {
-	struct buffer buffers[BUFFER_QUEUE_NUM];
-	struct list_head free_list; /* list of buffers not in use */
-	struct list_head used_list; /* list of buffers in use */
-	spinlock_t lock;            /* spinlock around list operations */
-	wait_queue_head_t wait;     /* used for signaling queue changes */
-};
-
 struct vencrypt_ctx {
 	struct cdev cdev;
 	struct vencrypt_cipher cipher;
-	struct buffer_queue buffer_queue;
+	struct venc_buffers bufs;
 	unsigned long open_flags;
 };
 
@@ -51,70 +35,15 @@ static struct class *driver_device_class;
 static dev_t driver_dev;
 static struct vencrypt_ctx *driver_ctx;
 
-void init_buffer_queue(struct buffer_queue *q)
-{
-	INIT_LIST_HEAD(&q->free_list);
-	INIT_LIST_HEAD(&q->used_list);
-	spin_lock_init(&q->lock);
-	init_waitqueue_head(&q->wait);
-
-	for (int i = 0; i < MAX_BUFFERS; i++) {
-		q->buffers[i].size = 0;
-		list_add(&q->buffers[i].list, &q->free_list);
-	}
-}
-
-struct buffer * get_out_buffer(struct buffer_queue *q)
-{
-	struct buffer *buf;
-	buf = NULL;
-	spin_lock(&q->lock);
-	if (!list_empty(&q->used_list))
-		buf = list_first_entry(&q->used_list, struct buffer, list);	
-	spin_unlock(&q->lock);
-	return buf;
-}
-
-int wait_out_buffer(struct vencrypt_ctx *ctx, struct buffer **buf)
-{
-	return wait_event_interruptible(ctx->buffer_queue.wait,
-		(*buf = get_out_buffer(&ctx->buffer_queue)) != NULL);
-}
-
-void release_read_buffer(struct buffer_queue *q, struct buffer *buf)
-{	
-	buf->size = 0;
-	spin_lock(&q->lock);
-	list_del(&buf->list);
-	list_add(&buf->list, &q->free_list);
-	spin_unlock(&q->lock);
-	wake_up_interruptible(&q->wait);
-}
-
-struct buffer * get_in_buffer(struct buffer_queue *q)
-{
-	struct buffer *buf;
-	buf = NULL;
-	spin_lock(&q->lock);
-	if (!list_empty(&q->free_list))
-		buf = list_first_entry(&q->free_list, struct buffer, list);	
-	spin_unlock(&q->lock);
-	return buf;
-}
-
-int wait_in_buffer(struct vencrypt_ctx *ctx, struct buffer **buf)
-{
-	return wait_event_interruptible(ctx->buffer_queue.wait,
-		(*buf = get_in_buffer(&ctx->buffer_queue)) != NULL);
-}
-
-static int encode_buffer(struct vencrypt_cipher *cipher, struct buffer *buf)
+static int encode_buf(struct vencrypt_cipher *cipher, struct venc_buffer *buf)
 {
 	int err;
+	// pr_err("%s: encode_buf: size:%zu\n", DRIVER_NAME, buf->size);
+
 	if (buf->size == 0)
 		return 0;
 	/*
-	 * used for tests, i.e. we don't encrypt
+	 * used for testing, i.e. 2 = don't encrypt
 	 */
 	if (mod_param_encrypt == 2)
 		return 0;
@@ -130,20 +59,10 @@ static int encode_buffer(struct vencrypt_cipher *cipher, struct buffer *buf)
 		buf->size = block_len_pkcs7(buf->data, buf->size);
 	}
 
-	// smp_wmb();
-	return err;
-}
+	if (err)
+		pr_err("%s: encode_buf failed: %d\n", DRIVER_NAME, err);
 
-void in_buffer_ready(struct vencrypt_cipher *c, 
-			struct buffer_queue *q,
-			struct buffer *buf)
-{
-	encode_buffer(c, buf);
-	spin_lock(&q->lock);
-	list_del(&buf->list); // Remove from free list
-	list_add_tail(&buf->list, &q->used_list); // Add to used list
-	spin_unlock(&q->lock);
-	wake_up_interruptible(&q->wait);
+	return err;
 }
 
 static int vencrypt_open(struct inode *inode, struct file *file)
@@ -173,20 +92,43 @@ static int vencrypt_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+size_t total = 0;
+size_t last_size = 0;
+
 static int vencrypt_release(struct inode *inode, struct file *file)
 {
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
-	struct buffer *buf;
+	struct venc_buffer *buf;
 
 	minor = iminor(inode);
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
-	if (minor == WRITE_MINOR
-	   && (buf = get_in_buffer(&ctx->buffer_queue)) != NULL
-	   && buf->size > 0)
-		in_buffer_ready(&ctx->cipher, &ctx->buffer_queue, buf);
+	if (minor == WRITE_MINOR) {		
+		buf = venc_first_free_or_null(&ctx->bufs);
+		pr_info("%s: release minor: %d total: %zu last:%zu last_buf:%p\n", DRIVER_NAME, minor, total, last_size, buf);
+		/*
+		 * check to see if we have an uncomplete buffer from _write, if 
+		 * so pad and encrypt it.
+		 */		
+		if (buf != NULL && buf->size ) {
+			pr_info("%s: encode_buf from write release: %d\n", DRIVER_NAME, minor);
+			encode_buf(&ctx->cipher, buf);
+			venc_move_to_used(&ctx->bufs, buf);
+		}
 
+		/* 
+		 * drain the out buffers, then fops read will return 0 until 
+		 * next reader closes / realease
+		 */
+		venc_drain(&ctx->bufs);
+
+	} else if (minor == READ_MINOR) {
+		// if (list_empty(ctx->bufs.used))
+		venc_clear_drain(&ctx->bufs);
+	}
+
+	pr_info("%s: release minor: %d\n", DRIVER_NAME, minor);
 	smp_mb__before_atomic();
 	clear_bit_unlock(minor, &ctx->open_flags);
 	return 0;
@@ -194,12 +136,12 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 
 static ssize_t vencrypt_read(struct file *file, char __user *user_buf, size_t count,
 			     loff_t *offset)
-{
-	uint8_t minor;
-	struct vencrypt_ctx *ctx;
-	size_t to_copy;
-	struct buffer *buf;
+{	
 	int err;
+	uint8_t minor;
+	struct vencrypt_ctx *ctx;	
+	struct venc_buffer *buf;
+	size_t to_copy;
 
 	minor = iminor(file_inode(file));
 
@@ -208,9 +150,17 @@ static ssize_t vencrypt_read(struct file *file, char __user *user_buf, size_t co
 
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
-	err = wait_out_buffer(ctx, &buf);
+	err = venc_wait_for_used(&ctx->bufs, &buf);
 	if (err)
 		return err;
+
+	
+	if (buf == NULL) {
+		if (ctx->bufs.drain)
+			return 0;
+		else
+			return -EIO;
+	}
 	
 	if (buf->size == 0)
 		return 0;
@@ -219,13 +169,13 @@ static ssize_t vencrypt_read(struct file *file, char __user *user_buf, size_t co
 
 	if (copy_to_user(user_buf, buf->data, to_copy))
 		return -EFAULT;
-
+	
 	buf->size -= to_copy;
-
+	
 	if (buf->size == 0)
-		release_read_buffer(&ctx->buffer_queue, buf);
+		venc_move_to_free(&ctx->bufs, buf);
 
-	return (ssize_t)to_copy;
+	return to_copy;
 }
 
 static ssize_t vencrypt_write(struct file *file, const char __user *user_buf,
@@ -234,7 +184,7 @@ static ssize_t vencrypt_write(struct file *file, const char __user *user_buf,
 	int err;
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
-	struct buffer *buf;
+	struct venc_buffer *buf;
 	size_t available, copied;
 
 	minor = iminor(file_inode(file));
@@ -244,7 +194,7 @@ static ssize_t vencrypt_write(struct file *file, const char __user *user_buf,
 
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 	
-	err = wait_in_buffer(ctx, &buf);
+	err =  venc_wait_for_free(&ctx->bufs, &buf);
 	if (err)
 		return err;
 
@@ -255,12 +205,14 @@ static ssize_t vencrypt_write(struct file *file, const char __user *user_buf,
 	
 	buf->size += copied;
 
-	available = sizeof(buf->data) - buf->size;
-	pr_info("%s: write count: %zu offset: %lld buff_size: %zu available: %zu copied:%zu\n",
-		DRIVER_NAME, count, *offset, buf->size, available, copied);
-	if (available == 0)		
-		in_buffer_ready(&ctx->cipher, &ctx->buffer_queue, buf);
+	available = sizeof(buf->data) - buf->size;	
+	if (available == 0) {
+		encode_buf(&ctx->cipher, buf);
+		venc_move_to_used(&ctx->bufs, buf);
+	}
 
+	total += copied;
+	last_size = copied;
 	return copied;
 }
 
@@ -387,7 +339,7 @@ static int __init vencrypt_init(void)
 		goto err_free_data;
 	}	
 	
-	init_buffer_queue(&driver_ctx->buffer_queue);
+	venc_init_buffers(&driver_ctx->bufs);
 
 	cdev_init(&driver_ctx->cdev, &vencrypt_fops);
 	driver_ctx->cdev.owner = THIS_MODULE;

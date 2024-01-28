@@ -15,8 +15,10 @@
 #include <linux/string.h>
 
 #include "vencrypt-crypto.h"
+#include "vencrypt-buffers.h"
 
 #define AES_BLOCK_SIZE 16
+#define MODULE_NAME "tests"
 
 void test_cipher_with_two_blocks(void)
 {
@@ -207,9 +209,47 @@ void test_cipher_hello(void)
 	pr_info("Test completed\n");
 }
 
+void test_buffers(void) 
+{
+	struct venc_buffer *buf;
+	struct venc_buffers bufs;
+	
+	pr_info("%s: enter play\n", MODULE_NAME);
+
+	venc_init_buffers(&bufs);	
+
+	buf = venc_first_free_or_null(&bufs);
+	pr_info("%s: first free: %p\n", MODULE_NAME, buf);
+
+	pr_info("%s: 1\n", MODULE_NAME);
+	venc_move_to_used(&bufs, buf);
+	
+	pr_info("%s: 2\n", MODULE_NAME);
+	buf = venc_first_free_or_null(&bufs);
+
+	pr_info("%s: 3\n", MODULE_NAME);
+	buf = venc_first_used_or_null(&bufs);
+	pr_info("%s: first used: %p\n", MODULE_NAME, buf);
+
+	pr_info("%s: 4\n", MODULE_NAME);
+	venc_move_to_free(&bufs, buf);
+
+	pr_info("%s: 5\n", MODULE_NAME);
+	buf = venc_first_free_or_null(&bufs);
+	pr_info("%s: first free: %p\n", MODULE_NAME, buf);
+	
+	pr_info("%s: 6\n", MODULE_NAME);
+	buf = venc_first_used_or_null(&bufs);	
+	pr_info("%s: first used: %p\n", MODULE_NAME, buf);
+
+	pr_info("%s: return play\n", MODULE_NAME);
+}
+
 static int __init my_module_init(void)
 {
-	test_cipher_hello();
+	test_buffers();
+	// list_play();
+	// test_cipher_hello();
 	// test_cipher_with_two_blocks();
 	// test_pkcs7_padding();
 	return 0;
