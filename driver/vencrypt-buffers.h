@@ -1,5 +1,5 @@
-#ifndef __VENCYPTO_BUFFERS_H
-#define __VENCYPTO_BUFFERS_H
+#ifndef __VENCRYPT_BUFFERS_H
+#define __VENCRYPT_BUFFERS_H
 
 #include <linux/list.h>
 #include <linux/spinlock.h>
@@ -32,4 +32,4 @@ int venc_wait_for_used(struct venc_buffers *bufs, struct venc_buffer **buf);
 void venc_drain(struct venc_buffers *bufs);
 void venc_clear_drain(struct venc_buffers *bufs);
 
-#endif /* __VENCYPTO_BUFFERS_H */
+#endif /* __VENCRYPT_BUFFERS_H */

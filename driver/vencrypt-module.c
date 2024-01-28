@@ -1,6 +1,7 @@
 #include <linux/module.h>
 #include <linux/cdev.h>
 
+#include "vencrypt-strings.h"
 #include "vencrypt-buffers.h"
 #include "vencrypt-crypto.h"
 
@@ -21,12 +22,6 @@ struct vencrypt_ctx {
 	struct venc_buffers bufs;
 	unsigned long open_flags;
 };
-
-static int driver_major;
-static struct class *driver_device_class;
-static dev_t driver_dev;
-static struct vencrypt_ctx *driver_ctx;
-
 
 static int encode_buf(struct venc_cipher *cipher, struct venc_buffer *buf)
 {
@@ -206,42 +201,7 @@ static ssize_t vencrypt_write(struct file *file, const char __user *user_buf,
 	return copied;
 }
 
-int char_to_nibble(char c)
-{
-	if ('0' <= c && c <= '9')
-		return (unsigned char)(c - '0');
-	if ('A' <= c && c <= 'F')
-		return (unsigned char)(c - 'A' + 10);
-	if ('a' <= c && c <= 'f')
-		return (unsigned char)(c - 'a' + 10);
-	return -EINVAL;
-}
-
-int hex_to_bytes(unsigned char *dst, const char *src, unsigned int dst_size)
-{
-	size_t i, l;
-	int ms, ls;
-
-	l = strlen(src);
-	if (src[0] == '\0' || l % 2)
-		return -EINVAL;
-	if (l > dst_size * 2)
-		return -EINVAL;
-	memset(dst, 0, dst_size);
-
-	for (i = 0; i < l; i += 2) {
-		ms = char_to_nibble(src[i]);
-		if (ms < 0)
-			return -EINVAL;
-		ls = char_to_nibble(src[i + 1]);
-		if (ls < 0)
-			return -EINVAL;
-		dst[i / 2] = (ms << 4) | ls;
-	}
-	return 0;
-}
-
-const char* get_dev_read_prefix(void)
+static const char* get_dev_read_prefix(void)
 {
 	switch (mod_param_encrypt)
 	{
@@ -255,7 +215,7 @@ const char* get_dev_read_prefix(void)
 	return "invalid_r";
 }
 
-const char* get_dev_write_prefix(void)
+static const char* get_dev_write_prefix(void)
 {
 	switch (mod_param_encrypt)
 	{
@@ -277,6 +237,12 @@ static const struct file_operations vencrypt_fops = {
 	.write		= vencrypt_write,
 	.release	= vencrypt_release,
 };
+
+
+static int driver_major;
+static struct class *driver_device_class;
+static dev_t driver_dev;
+static struct vencrypt_ctx *driver_ctx;
 
 static int __init vencrypt_init(void)
 {

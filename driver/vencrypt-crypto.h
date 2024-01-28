@@ -1,5 +1,5 @@
-#ifndef __VENCYPTO_CRYPTO_H
-#define __VENCYPTO_CRYPTO_H
+#ifndef __VENCRYPT_CRYPTO_H
+#define __VENCRYPT_CRYPTO_H
 
 #include <linux/crypto.h>         // for struct crypto_skcipher
 #include <linux/scatterlist.h>    // for struct scatterlist
@@ -34,4 +34,4 @@ void venc_free_cipher(struct venc_cipher *cipher);
 int venc_encrypt(struct venc_cipher *cipher, u8 *block, const size_t block_length);
 int venc_decrypt(struct venc_cipher *cipher, u8 *block, const size_t block_length);
 
-#endif /* __VENCYPTO_CRYPTO_H */
+#endif /* __VENCRYPT_CRYPTO_H */
