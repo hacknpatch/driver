@@ -9,6 +9,8 @@
 #include <linux/slab.h>
 #include <crypto/skcipher.h>
 
+#include "vencrypt-crypto.h"
+
 #define DRIVER_NAME "vencrypt"
 #define READ_MINOR 0
 #define WRITE_MINOR 1
@@ -57,14 +59,13 @@ enum state {
 struct vencrypt_ctx {
 	struct cdev cdev;
 
-	char key[CYPHER_KEY_SIZE];
-	char iv[CYPHER_IV_SIZE];
+	struct cipher_ctx cipher;
 
 	char buff[BUFFER_SIZE];
 	size_t buff_size;
 
 	enum state state;
-	wait_queue_head_t state_que;
+	wait_queue_head_t state_q;
 
 	unsigned long open_flags;
 };
@@ -74,39 +75,34 @@ static struct class *driver_device_class;
 static dev_t driver_dev;
 static struct vencrypt_ctx *driver_ctx;
 
-static void pad_block_pkcs7(uint8_t *block, size_t len, size_t block_size)
+
+static int encode_buffer(struct vencrypt_ctx *ctx)
 {
-	if (len >= block_size)
-		return;
-
-	uint8_t pad_value = block_size - len;
-	memset(block + len, pad_value, pad_value);
-}
-
-static size_t block_len_pkcs7(uint8_t *block, size_t block_size)
-{
-	uint8_t last_byte = block[block_size - 1];
-
-	if (last_byte == 0 || last_byte > block_size)
-		return block_size;
-
-	for (size_t i = block_size - last_byte; i < block_size; i++)
-		if (block[i] != last_byte)
-			return block_size;
-
-	return block_size - last_byte;
-}
-
-static void encode_buffer(struct vencrypt_ctx *ctx)
-{
-	pr_info("%s: encode_buffer cypher_encrypt: %d\n", DRIVER_NAME,
-		cypher_encrypt);
+	int err;
+	if (ctx->buff_size == 0)
+		return 0;
+	
+	if (cypher_encrypt) {
+		if (ctx->buff_size != BUFFER_SIZE)
+			pad_block_pkcs7(ctx->buff, ctx->buff_size, BUFFER_SIZE);
+		err = encrypt_block(&ctx->cipher, ctx->buff, BUFFER_SIZE);
+		ctx->buff_size = BUFFER_SIZE;	
+	} else {
+		err = decrypt_block(&ctx->cipher, ctx->buff, BUFFER_SIZE);
+		ctx->buff_size = block_len_pkcs7(ctx->buff, BUFFER_SIZE);
+	}
+	smp_wmb();
+	return err;
 }
 
 static void set_state(struct vencrypt_ctx *ctx, enum state state)
 {
-	ctx->state = state;
-	wake_up_interruptible(&ctx->state_que);
+	if (ctx->state != state) {
+		if (state == ST_SEND || state == ST_CLOSING)
+			encode_buffer(ctx);
+		ctx->state = state;
+	}
+	wake_up_interruptible(&ctx->state_q);
 }
 
 static int vencrypt_open(struct inode *inode, struct file *file)
@@ -132,15 +128,15 @@ static int vencrypt_open(struct inode *inode, struct file *file)
 	file->private_data = ctx;
 
 	if (minor == WRITE_MINOR) {
-		err = wait_event_interruptible(ctx->state_que,
+		err = wait_event_interruptible(ctx->state_q,
 					       ctx->state == ST_REVC);
 		if (!err) {
-			memset(ctx->iv, 0, sizeof(ctx->iv));
+			zero_cipher_iv(&ctx->cipher);			
 			ctx->buff_size = 0;
 		}
 
 	} else if (minor == READ_MINOR && ctx->buff_size > 0) {
-		err = wait_event_interruptible(ctx->state_que,
+		err = wait_event_interruptible(ctx->state_q,
 					       ctx->state != ST_REVC);
 	}
 
@@ -161,14 +157,10 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
 	if (minor == WRITE_MINOR) {
-		err = wait_event_interruptible(ctx->state_que,
+		err = wait_event_interruptible(ctx->state_q,
 					       ctx->state == ST_REVC);
-
-		if (!err) {
-			pad_block_pkcs7(ctx->buff, ctx->buff_size, BUFFER_SIZE);
-			smp_wmb();
+		if (!err)			
 			set_state(ctx, ST_CLOSING);
-		}
 
 	} else if (minor == READ_MINOR && ctx->buff_size == 0 &&
 		   ctx->state == ST_CLOSING) {
@@ -193,25 +185,27 @@ static ssize_t vencrypt_read(struct file *file, char __user *buf, size_t count,
 
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
-	if (wait_event_interruptible(ctx->state_que,
+	if (wait_event_interruptible(ctx->state_q,
 				     (ctx->state == ST_SEND ||
 				      ctx->state == ST_CLOSING)))
 		return -ERESTARTSYS;
 
+	 ctx->state, ctx->buff_size, BUFFER_SIZE, ctx->buff);
+
 	if (ctx->buff_size == 0) {
-		if (ctx->state == ST_SEND)
-			set_state(ctx, ST_REVC);
+		if (ctx->state != ST_CLOSING)
+			set_state(ctx, ST_REVC);			
 		return 0;
 	}
 
 	to_copy = min(ctx->buff_size, count);
 
-	if (copy_to_user(buf, &ctx->buff[0], to_copy))
+	if (copy_to_user(buf, ctx->buff, to_copy))
 		return -EFAULT;
 
 	ctx->buff_size -= to_copy;
 
-	if (ctx->buff_size == 0 && ctx->state == ST_SEND)
+	if (ctx->buff_size == 0 && ctx->state != ST_CLOSING)
 		set_state(ctx, ST_REVC);
 
 	return (ssize_t)to_copy;
@@ -235,7 +229,7 @@ static ssize_t vencrypt_write(struct file *file, const char __user *buf,
 	remaining = BUFFER_SIZE - ctx->buff_size;
 	if (remaining == 0) {
 		set_state(ctx, ST_SEND);
-		if (wait_event_interruptible(ctx->state_que,
+		if (wait_event_interruptible(ctx->state_q,
 					     ctx->state == ST_REVC))
 			return -ERESTARTSYS;
 		remaining = BUFFER_SIZE - ctx->buff_size;
@@ -248,7 +242,7 @@ static ssize_t vencrypt_write(struct file *file, const char __user *buf,
 	ctx->buff_size += to_copy;
 
 	remaining = BUFFER_SIZE - ctx->buff_size;
-	if (remaining == 0)
+	if (remaining == 0)		
 		set_state(ctx, ST_SEND);
 
 	return to_copy;
@@ -276,24 +270,19 @@ int hex_to_bytes(unsigned char *dst, const char *src, unsigned int dst_size)
 	int ms, ls;
 
 	l = strlen(src);
-
 	if (src[0] == '\0' || l % 2)
 		return -EINVAL;
-
 	if (l > dst_size * 2)
 		return -EINVAL;
-
 	memset(dst, 0, dst_size);
 
 	for (i = 0; i < l; i += 2) {
 		ms = char_to_nibble(src[i]);
 		if (ms < 0)
 			return -EINVAL;
-
 		ls = char_to_nibble(src[i + 1]);
 		if (ls < 0)
 			return -EINVAL;
-
 		dst[i / 2] = (ms << 4) | ls;
 	}
 	return 0;
@@ -311,6 +300,15 @@ static int __init vencrypt_init(void)
 {
 	int err;
 	struct device *dev;
+	u8 key[32] = {0};
+	int key_len;
+
+	key_len = strlen(cypher_key) / 2;
+	if (key_len < 16 || key_len > 32) {
+		pr_err("%s: Invalid crypter key length %d it must between 16 and 32\n", 
+		       DRIVER_NAME, key_len);
+		return -EINVAL;
+	}
 
 	err = alloc_chrdev_region(&driver_dev, 0, CHAR_DEVICES, DRIVER_NAME);
 	if (err)
@@ -330,27 +328,35 @@ static int __init vencrypt_init(void)
 		goto err_destroy_class;
 	}
 
-	err = hex_to_bytes(driver_ctx->key, cypher_key, CYPHER_KEY_SIZE);
-	if (err)
+	err = hex_to_bytes(key, cypher_key, key_len);
+	if (err) {		
+		pr_err("%s: Crypter key is invalid hex\n", DRIVER_NAME);
 		goto err_free_data;
+	}
 
+	err = setup_cipher_context(&driver_ctx->cipher, key, sizeof(key));
+	if (err) {
+		pr_err("%s: Crypter setup failed err %d\n", DRIVER_NAME, err);
+		goto err_free_data;
+	}
+	
 	cdev_init(&driver_ctx->cdev, &vencrypt_fops);
 	driver_ctx->cdev.owner = THIS_MODULE;
 
 	err = cdev_add(&driver_ctx->cdev, driver_dev, 2);
 	if (err)
-		goto err_free_data;
+		goto err_free_cipher;
 
 	driver_ctx->buff_size = 0;
 	driver_ctx->state = ST_REVC;
-	init_waitqueue_head(&driver_ctx->state_que);
+	init_waitqueue_head(&driver_ctx->state_q);
 
 	dev = device_create(driver_device_class, NULL,
 			    MKDEV(driver_major, READ_MINOR), driver_ctx,
 			    "vencrypt_read");
 	if (IS_ERR(dev)) {
 		err = PTR_ERR(dev);
-		goto err_free_data;
+		goto err_free_cipher;
 	}
 
 	dev = device_create(driver_device_class, NULL,
@@ -360,18 +366,22 @@ static int __init vencrypt_init(void)
 		err = PTR_ERR(dev);
 		device_destroy(driver_device_class,
 			       MKDEV(driver_major, READ_MINOR));
-		goto err_free_data;
+		goto err_free_cipher;
 	}
 
 	err = init_skcipher(driver_ctx);
 	if (err)
 		goto err_free_devices;
 
+	pr_info("%s: Initialized\n", DRIVER_NAME);
 	return 0;
 
 err_free_devices:
 	device_destroy(driver_device_class, MKDEV(driver_major, READ_MINOR));
 	device_destroy(driver_device_class, MKDEV(driver_major, WRITE_MINOR));
+
+err_free_cipher:
+	free_cipher_context(&driver_ctx->cipher);
 
 err_free_data:
 	kfree(driver_ctx);
@@ -380,7 +390,7 @@ err_destroy_class:
 	class_destroy(driver_device_class);
 
 err_unregister_chrdev:
-	unregister_chrdev_region(driver_dev, CHAR_DEVICES);
+	unregister_chrdev_region(driver_dev, CHAR_DEVICES);	
 	return err;
 }
 
@@ -391,8 +401,8 @@ static void __exit vencrypt_exit(void)
 	device_destroy(driver_device_class, MKDEV(driver_major, WRITE_MINOR));
 	class_destroy(driver_device_class);
 	unregister_chrdev_region(driver_dev, CHAR_DEVICES);
+	free_cipher_context(&driver_ctx->cipher);
 	kfree(driver_ctx);
-
 	pr_info("%s: Exited\n", DRIVER_NAME);
 }
 

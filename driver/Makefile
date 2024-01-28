@@ -1,9 +1,8 @@
-# m = dynamic module
 obj-m += vencrypt.o
-obj-m += crypto_test.o
+vencrypt-objs := vencrypt-main.o vencrypt-crypto.o 
 
-# CC := x86_64-linux-gnu-gcc-12
-#CONFIG_MODULE_SIG=n
+obj-m += tests.o
+tests-objs := tests-main.o vencrypt-crypto.o 
 
 # modules_install = /lib/module/<kernel_release>/extra/
 all:
