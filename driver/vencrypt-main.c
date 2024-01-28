@@ -193,7 +193,7 @@ static ssize_t vencrypt_read(struct file *file, char __user *buf, size_t count,
 }
 
 static ssize_t vencrypt_write(struct file *file, const char __user *buf,
-			      size_t count, loff_t *ppos)
+			      size_t count, loff_t *offset)
 {
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
@@ -264,33 +264,33 @@ int hex_to_bytes(unsigned char *dst, const char *src, unsigned int dst_size)
 	return 0;
 }
 
-const char* get_dev_name_read(void)
+const char* get_dev_read_prefix(void)
 {
 	switch (mod_param_encrypt)
 	{
 		case 0:
-			return "vdecrypt_pt";
+			return "pt";
 		case 1:		
-			return "vdecrypt_ct";
+			return "ct";
 		case 2:
-			return "vdecrypt_read";
+			return "read";
 	}
-	return "vdecrypt_invalid_0";
+	return "invalid_r";
 }
 
-const char* get_dev_name_write(void)
+const char* get_dev_write_prefix(void)
 {
 	switch (mod_param_encrypt)
 	{
 		case 0:
-			return "vdecrypt_ct";
+			return "ct";
 		case 1:		
-			return "vdecrypt_pt";
+			return "pt";
 		case 2:
-			return "vdecrypt_write";
+			return "write";
 				
 	}
-	return "vdecrypt_invalid_0";
+	return "invalid_w";
 }
 
 static const struct file_operations vencrypt_fops = {
@@ -365,7 +365,7 @@ static int __init vencrypt_init(void)
 
 	dev = device_create(driver_device_class, NULL,
 			    MKDEV(driver_major, READ_MINOR), driver_ctx,
-			    get_dev_name_read());
+			    "%s_%s", DRIVER_NAME, get_dev_read_prefix());
 	if (IS_ERR(dev)) {
 		err = PTR_ERR(dev);
 		goto err_free_cipher;
@@ -373,7 +373,7 @@ static int __init vencrypt_init(void)
 
 	dev = device_create(driver_device_class, NULL,
 			    MKDEV(driver_major, WRITE_MINOR), driver_ctx,
-			    get_dev_name_write());
+			    "%s_%s", DRIVER_NAME, get_dev_write_prefix());
 	if (IS_ERR(dev)) {
 		err = PTR_ERR(dev);
 		device_destroy(driver_device_class,
