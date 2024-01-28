@@ -18,11 +18,11 @@
 
 #define BUFFER_SIZE 16
 
-static int cypher_encrypt = 1;
-module_param_named(encrypt, cypher_encrypt, int, S_IRUGO);
+static int mod_param_encrypt = 1;
+module_param_named(encrypt, mod_param_encrypt, int, S_IRUGO);
 
-static char *cypher_key;
-module_param_named(key, cypher_key, charp, S_IRUGO);
+static char *mod_param_key;
+module_param_named(key, mod_param_key, charp, S_IRUGO);
 
 enum state {
 	ST_REVC = 0,
@@ -58,10 +58,10 @@ static int encode_buffer(struct vencrypt_ctx *ctx)
 	/*
 	 * used for tests, i.e. we don't encrypt
 	 */
-	if (cypher_encrypt == 2)
+	if (mod_param_encrypt == 2)
 		return 0;
 	
-	if (cypher_encrypt) {
+	if (mod_param_encrypt) {
 		if (ctx->buff_size != BUFFER_SIZE) {
 			pad_block_pkcs7(ctx->buff, ctx->buff_size, BUFFER_SIZE);
 			ctx->buff_size = BUFFER_SIZE;
@@ -226,11 +226,6 @@ static ssize_t vencrypt_write(struct file *file, const char __user *buf,
 	return to_copy;
 }
 
-int init_skcipher(struct vencrypt_ctx *ctx)
-{
-	return 0;
-}
-
 int char_to_nibble(char c)
 {
 	if ('0' <= c && c <= '9')
@@ -266,6 +261,35 @@ int hex_to_bytes(unsigned char *dst, const char *src, unsigned int dst_size)
 	return 0;
 }
 
+const char* get_dev_name_read(void)
+{
+	switch (mod_param_encrypt)
+	{
+		case 0:
+			return "vdecrypt_pt";
+		case 1:		
+			return "vdecrypt_ct";
+		case 2:
+			return "vdecrypt_read";
+	}
+	return "vdecrypt_invalid_0";
+}
+
+const char* get_dev_name_write(void)
+{
+	switch (mod_param_encrypt)
+	{
+		case 0:
+			return "vdecrypt_ct";
+		case 1:		
+			return "vdecrypt_pt";
+		case 2:
+			return "vdecrypt_write";
+				
+	}
+	return "vdecrypt_invalid_0";
+}
+
 static const struct file_operations vencrypt_fops = {
 	.owner		= THIS_MODULE,
 	.open		= vencrypt_open,
@@ -281,14 +305,14 @@ static int __init vencrypt_init(void)
 	u8 key[32] = {0};
 	int key_len;
 
-	if (cypher_encrypt < 0 || cypher_encrypt > 2)
+	if (mod_param_encrypt < 0 || mod_param_encrypt > 2)
 	{
 		pr_err("%s: Invalid crypter encrypt=%d choices: 0=decrypt, 1=encrypt, 2=no-encryption\n", 
-		       DRIVER_NAME, cypher_encrypt);
+		       DRIVER_NAME, mod_param_encrypt);
 		return -EINVAL;
 	}
 
-	key_len = strlen(cypher_key) / 2;
+	key_len = strlen(mod_param_key) / 2;
 	if (key_len < CBC_AES_MIN_KEY_SIZE || key_len > CBC_AES_MAX_KEY_SIZE) {
 		pr_err("%s: Invalid crypter key length %d it must between %d and %d\n", 
 		       DRIVER_NAME, key_len, CBC_AES_MIN_KEY_SIZE, CBC_AES_MAX_KEY_SIZE);
@@ -313,7 +337,7 @@ static int __init vencrypt_init(void)
 		goto err_destroy_class;
 	}
 
-	err = hex_to_bytes(key, cypher_key, key_len);
+	err = hex_to_bytes(key, mod_param_key, key_len);
 	if (err) {		
 		pr_err("%s: Crypter key is invalid hex\n", DRIVER_NAME);
 		goto err_free_data;
@@ -338,7 +362,7 @@ static int __init vencrypt_init(void)
 
 	dev = device_create(driver_device_class, NULL,
 			    MKDEV(driver_major, READ_MINOR), driver_ctx,
-			    "vencrypt_read");
+			    get_dev_name_read());
 	if (IS_ERR(dev)) {
 		err = PTR_ERR(dev);
 		goto err_free_cipher;
@@ -346,7 +370,7 @@ static int __init vencrypt_init(void)
 
 	dev = device_create(driver_device_class, NULL,
 			    MKDEV(driver_major, WRITE_MINOR), driver_ctx,
-			    "vencrypt_write");
+			    get_dev_name_write());
 	if (IS_ERR(dev)) {
 		err = PTR_ERR(dev);
 		device_destroy(driver_device_class,
@@ -354,16 +378,8 @@ static int __init vencrypt_init(void)
 		goto err_free_cipher;
 	}
 
-	err = init_skcipher(driver_ctx);
-	if (err)
-		goto err_free_devices;
-
 	pr_info("%s: Initialized\n", DRIVER_NAME);
 	return 0;
-
-err_free_devices:
-	device_destroy(driver_device_class, MKDEV(driver_major, READ_MINOR));
-	device_destroy(driver_device_class, MKDEV(driver_major, WRITE_MINOR));
 
 err_free_cipher:
 	free_cipher(&driver_ctx->cipher);
