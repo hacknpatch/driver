@@ -23,6 +23,11 @@ some scripts for installing / removing the module.
 ./mod_remove.sh
 ```
 
+``` shell
+cat /dev/vencrypt_read | base64
+echo "this is my string" > /dev/vencrypt_write
+```
+
 for testing I currently 
 ```shell
 cat /dev/vencrypt_read
