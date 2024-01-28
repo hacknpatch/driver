@@ -17,7 +17,7 @@ module_param_named(key, mod_param_key, charp, S_IRUGO);
 
 struct vencrypt_ctx {
 	struct cdev cdev;
-	struct vencrypt_cipher cipher;
+	struct venc_cipher cipher;
 	struct venc_buffers bufs;
 	unsigned long open_flags;
 };
@@ -27,10 +27,11 @@ static struct class *driver_device_class;
 static dev_t driver_dev;
 static struct vencrypt_ctx *driver_ctx;
 
-static int encode_buf(struct vencrypt_cipher *cipher, struct venc_buffer *buf)
+
+static int encode_buf(struct venc_cipher *cipher, struct venc_buffer *buf)
 {
 	int err;
-	
+
 	if (buf->size == 0)
 		return 0;
 	/*
@@ -41,13 +42,13 @@ static int encode_buf(struct vencrypt_cipher *cipher, struct venc_buffer *buf)
 	
 	if (mod_param_encrypt) {
 		if (buf->size != sizeof(buf->size)) {
-			pad_block_pkcs7(buf->data, buf->size , sizeof(buf->size));
+			pkcs7_pad_block(buf->data, buf->size , sizeof(buf->size));
 			buf->size = sizeof(buf->size);
 		}
-		err = encrypt_block(cipher, buf->data, sizeof(buf->size));
+		err = venc_encrypt(cipher, buf->data, sizeof(buf->size));
 	} else {
-		err = decrypt_block(cipher, buf->data, buf->size);
-		buf->size = block_len_pkcs7(buf->data, buf->size);
+		err = venc_decrypt(cipher, buf->data, buf->size);
+		buf->size = pkcs7_block_len(buf->data, buf->size);
 	}
 
 	if (err)
@@ -76,9 +77,12 @@ static int vencrypt_open(struct inode *inode, struct file *file)
 
 	file->private_data = ctx;
 
-	if (minor == WRITE_MINOR)
-		// writer does encryption, so this is safe.
-		zero_cipher_iv(&ctx->cipher);
+	/* 
+	* Writer does encryption, so this is safe to clear IV. The unread bufs
+	* in used queue will be in the drian state until the reader closes.
+	*/
+	if (minor == WRITE_MINOR)		
+		venc_zero_cipher_iv(&ctx->cipher);
 
 	return 0;
 }
@@ -109,8 +113,11 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 		 */
 		venc_drain(&ctx->bufs);
 
-	} else if (minor == READ_MINOR) {
-		// if (list_empty(ctx->bufs.used))
+	} else if (minor == READ_MINOR) {		
+		/*
+		 * TODO: consider what to do if read exists but there is still
+		 * data in the used list?
+		 */
 		venc_clear_drain(&ctx->bufs);
 	}
 	
@@ -316,7 +323,7 @@ static int __init vencrypt_init(void)
 		goto err_free_data;
 	}
 
-	err = init_cipher(&driver_ctx->cipher, key, sizeof(key));
+	err = venc_init_cipher(&driver_ctx->cipher, key, sizeof(key));
 	if (err) {
 		pr_err("%s: Crypter setup failed err %d\n", DRIVER_NAME, err);
 		goto err_free_data;
@@ -353,7 +360,7 @@ static int __init vencrypt_init(void)
 	return 0;
 
 err_free_cipher:
-	free_cipher(&driver_ctx->cipher);
+	venc_free_cipher(&driver_ctx->cipher);
 
 err_free_data:
 	kfree(driver_ctx);
@@ -373,7 +380,7 @@ static void __exit vencrypt_exit(void)
 	device_destroy(driver_device_class, MKDEV(driver_major, WRITE_MINOR));
 	class_destroy(driver_device_class);
 	unregister_chrdev_region(driver_dev, CHAR_DEVICES);
-	free_cipher(&driver_ctx->cipher);
+	venc_free_cipher(&driver_ctx->cipher);
 	kfree(driver_ctx);
 	pr_info("%s: Exited\n", DRIVER_NAME);
 }

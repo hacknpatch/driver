@@ -4,6 +4,7 @@
 
 #include "vencrypt-buffers.h"
 
+
 void venc_init_buffers(struct venc_buffers *bufs)
 {
 	int i;

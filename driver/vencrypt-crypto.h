@@ -12,7 +12,7 @@
 #define AES_BLOCK_SIZE 16
 #define AES_IV_SIZE 16
 
-struct vencrypt_cipher {
+struct venc_cipher {
 	struct crypto_skcipher *tfm;
 	struct skcipher_request *req;
 	struct scatterlist sg;
@@ -21,18 +21,17 @@ struct vencrypt_cipher {
 	u8 key[CBC_AES_MAX_KEY_SIZE];
 };
 
-size_t block_len_pkcs7(u8 *block, size_t block_size);
-void pad_block_pkcs7(u8 *block, size_t current_size, size_t block_size);
+size_t pkcs7_block_len(u8 *block, size_t block_size);
+void pkcs7_pad_block(u8 *block, size_t current_size, size_t block_size);
 
-int init_cipher(struct vencrypt_cipher *cipher,
-			 const u8 *key, unsigned int keylen);
+int venc_init_cipher(struct venc_cipher *cipher, const u8 *key, unsigned int keylen);
 
-void zero_cipher_iv(struct vencrypt_cipher *cipher);
-void random_cipher_iv(struct vencrypt_cipher *cipher);
+void venc_zero_cipher_iv(struct venc_cipher *cipher);
+void venc_random_cipher_iv(struct venc_cipher *cipher);
 
-void free_cipher(struct vencrypt_cipher *cipher);
+void venc_free_cipher(struct venc_cipher *cipher);
 
-int encrypt_block(struct vencrypt_cipher *cipher, u8 *block, const size_t block_length);
-int decrypt_block(struct vencrypt_cipher *cipher, u8 *block, const size_t block_length);
+int venc_encrypt(struct venc_cipher *cipher, u8 *block, const size_t block_length);
+int venc_decrypt(struct venc_cipher *cipher, u8 *block, const size_t block_length);
 
 #endif /* __VENCYPTO_CRYPTO_H */

@@ -19,7 +19,7 @@ struct venc_buffers {
 	bool drain;
 	spinlock_t lock;            
 	wait_queue_head_t wait;     /* used for signaling queue changes */
-	struct venc_buffer bufs[100];
+	struct venc_buffer bufs[10];
 };
 
 void venc_init_buffers(struct venc_buffers *bufs);

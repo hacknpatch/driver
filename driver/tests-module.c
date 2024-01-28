@@ -22,7 +22,7 @@
 
 void test_cipher_with_two_blocks(void)
 {
-	struct vencrypt_cipher ctx;
+	struct venc_cipher ctx;
 	int ret;
 	u8 key[32] = { 0 }; // Define a test key (zero-filled for simplicity)
 	unsigned int keylen = 32; // Set key length (e.g., 32 bytes for AES-256)
@@ -33,36 +33,36 @@ void test_cipher_with_two_blocks(void)
 	u8 original_iv[16];
 
 	// Initialize context for encryption with key
-	ret = init_cipher(&ctx, key, keylen);
+	ret = venc_init_cipher(&ctx, key, keylen);
 	if (ret) {
 		pr_err("Failed to initialize encryption context\n");
 		return;
 	}
-	// zero_cipher_iv(&ctx);
-	random_cipher_iv(&ctx);
+	// venc_zero_cipher_iv(&ctx);
+	venc_random_cipher_iv(&ctx);
 
 	memcpy(original_iv, ctx.iv, sizeof(ctx.iv));
 
 	// Copy and Encrypt the first block of data
 	memcpy(encrypted_data1, original_data1, sizeof(original_data1));
-	ret = encrypt_block(&ctx, encrypted_data1, sizeof(encrypted_data1));
+	ret = venc_encrypt(&ctx, encrypted_data1, sizeof(encrypted_data1));
 	if (ret) {
 		pr_err("Encryption of block 1 failed\n");
-		free_cipher(&ctx);
+		venc_free_cipher(&ctx);
 		return;
 	}
 
 	// Copy and Encrypt the second block of data
 	memcpy(encrypted_data2, original_data2, sizeof(original_data2));
-	ret = encrypt_block(&ctx, encrypted_data2, sizeof(encrypted_data2));
+	ret = venc_encrypt(&ctx, encrypted_data2, sizeof(encrypted_data2));
 	if (ret) {
 		pr_err("Encryption of block 2 failed\n");
-		free_cipher(&ctx);
+		venc_free_cipher(&ctx);
 		return;
 	}
 
-	free_cipher(&ctx);
-	ret = init_cipher(&ctx, key, keylen);
+	venc_free_cipher(&ctx);
+	ret = venc_init_cipher(&ctx, key, keylen);
 	if (ret) {
 		pr_err("Failed to initialize decryption context\n");
 		return;
@@ -72,19 +72,19 @@ void test_cipher_with_two_blocks(void)
 	memcpy(ctx.iv, original_iv, sizeof(ctx.iv));
 
 	memcpy(decrypted_data1, encrypted_data1, sizeof(encrypted_data1));
-	ret = decrypt_block(&ctx, decrypted_data1, sizeof(decrypted_data1));
+	ret = venc_decrypt(&ctx, decrypted_data1, sizeof(decrypted_data1));
 	if (ret) {
 		pr_err("Decryption of block 1 failed\n");
-		free_cipher(&ctx);
+		venc_free_cipher(&ctx);
 		return;
 	}
 
 	// Decrypt the second block using the IV of the first encrypted block
 	memcpy(decrypted_data2, encrypted_data2, sizeof(encrypted_data2));
-	ret = decrypt_block(&ctx, decrypted_data2, sizeof(decrypted_data2));
+	ret = venc_decrypt(&ctx, decrypted_data2, sizeof(decrypted_data2));
 	if (ret) {
 		pr_err("Decryption of block 2 failed\n");
-		free_cipher(&ctx);
+		venc_free_cipher(&ctx);
 		return;
 	}
 
@@ -100,7 +100,7 @@ void test_cipher_with_two_blocks(void)
 	else
 		pr_info("Test passed: Decrypted data matches original data for block 2\n");
 
-	free_cipher(&ctx);
+	venc_free_cipher(&ctx);
 	pr_info("Test completed\n");
 }
 
@@ -119,7 +119,7 @@ void test_pkcs7_padding(void)
 		memset(test_block, 0x55, len); 
 
 		// Apply PKCS#7 padding
-		pad_block_pkcs7(test_block, len, AES_BLOCK_SIZE);
+		pkcs7_pad_block(test_block, len, AES_BLOCK_SIZE);
 
 		// Check if padding is correct
 		unsigned int padded_len = AES_BLOCK_SIZE - len;
@@ -134,7 +134,7 @@ void test_pkcs7_padding(void)
 
 		// Check effective length after padding
 		unsigned int effective_len =
-			block_len_pkcs7(test_block, AES_BLOCK_SIZE);
+			pkcs7_block_len(test_block, AES_BLOCK_SIZE);
 		if (effective_len != len) {
 			printk(KERN_ERR
 			       "Effective length check failed for length %u\n",
@@ -148,7 +148,7 @@ void test_pkcs7_padding(void)
 
 void test_cipher_hello(void)
 {
-	struct vencrypt_cipher ctx;
+	struct venc_cipher ctx;
 	int ret;
 	u8 key[32] = { 0 }; // Define a test key (zero-filled for simplicity)
 	unsigned int keylen = 32; // Set key length (e.g., 32 bytes for AES-256)
@@ -158,27 +158,27 @@ void test_cipher_hello(void)
 	u8 original_iv[16];
 
 	// Initialize context for encryption with key
-	ret = init_cipher(&ctx, key, keylen);
+	ret = venc_init_cipher(&ctx, key, keylen);
 	if (ret) {
 		pr_err("Failed to initialize encryption context\n");
 		return;
 	}
 
-	zero_cipher_iv(&ctx);
+	venc_zero_cipher_iv(&ctx);
 	memcpy(original_iv, ctx.iv, sizeof(ctx.iv));
-	// pad_block_pkcs7(original_data1, strlen(original_data1), AES_BLOCK_SIZE);
+	// pkcs7_pad_block(original_data1, strlen(original_data1), AES_BLOCK_SIZE);
 
 	// Copy and Encrypt the first block of data
 	memcpy(encrypted_data1, original_data1, sizeof(original_data1));
-	ret = encrypt_block(&ctx, encrypted_data1, sizeof(encrypted_data1));
+	ret = venc_encrypt(&ctx, encrypted_data1, sizeof(encrypted_data1));
 	if (ret) {
 		pr_err("Encryption of block 1 failed\n");
-		free_cipher(&ctx);
+		venc_free_cipher(&ctx);
 		return;
 	}
 	
-	free_cipher(&ctx);
-	ret = init_cipher(&ctx, key, keylen);
+	venc_free_cipher(&ctx);
+	ret = venc_init_cipher(&ctx, key, keylen);
 	if (ret) {
 		pr_err("Failed to initialize decryption context\n");
 		return;
@@ -188,10 +188,10 @@ void test_cipher_hello(void)
 	memcpy(ctx.iv, original_iv, sizeof(ctx.iv));
 
 	memcpy(decrypted_data1, encrypted_data1, sizeof(encrypted_data1));
-	ret = decrypt_block(&ctx, decrypted_data1, sizeof(decrypted_data1));
+	ret = venc_decrypt(&ctx, decrypted_data1, sizeof(decrypted_data1));
 	if (ret) {
 		pr_err("Decryption of block 1 failed\n");
-		free_cipher(&ctx);
+		venc_free_cipher(&ctx);
 		return;
 	}
 
@@ -201,7 +201,7 @@ void test_cipher_hello(void)
 	else
 		pr_info("Test passed: Decrypted data matches original data for block 1\n");		
 
-	free_cipher(&ctx);
+	venc_free_cipher(&ctx);
 
 	pr_info("Test original: %*ph\n", 16, original_data1);
 	pr_info("Test encrypted: %*ph\n", 16, encrypted_data1);
