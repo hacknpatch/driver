@@ -92,9 +92,6 @@ static int vencrypt_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
-size_t total = 0;
-size_t last_size = 0;
-
 static int vencrypt_release(struct inode *inode, struct file *file)
 {
 	uint8_t minor;
@@ -106,13 +103,11 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 
 	if (minor == WRITE_MINOR) {		
 		buf = venc_first_free_or_null(&ctx->bufs);
-		pr_info("%s: release minor: %d total: %zu last:%zu last_buf:%p\n", DRIVER_NAME, minor, total, last_size, buf);
 		/*
 		 * check to see if we have an uncomplete buffer from _write, if 
 		 * so pad and encrypt it.
 		 */		
 		if (buf != NULL && buf->size ) {
-			pr_info("%s: encode_buf from write release: %d\n", DRIVER_NAME, minor);
 			encode_buf(&ctx->cipher, buf);
 			venc_move_to_used(&ctx->bufs, buf);
 		}
@@ -127,8 +122,7 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 		// if (list_empty(ctx->bufs.used))
 		venc_clear_drain(&ctx->bufs);
 	}
-
-	pr_info("%s: release minor: %d\n", DRIVER_NAME, minor);
+	
 	smp_mb__before_atomic();
 	clear_bit_unlock(minor, &ctx->open_flags);
 	return 0;
@@ -211,8 +205,6 @@ static ssize_t vencrypt_write(struct file *file, const char __user *user_buf,
 		venc_move_to_used(&ctx->bufs, buf);
 	}
 
-	total += copied;
-	last_size = copied;
 	return copied;
 }
 
