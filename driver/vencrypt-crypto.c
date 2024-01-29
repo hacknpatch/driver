@@ -53,20 +53,19 @@ void venc_random_cipher_iv(struct venc_cipher *cipher)
 	get_random_bytes(cipher->iv, AES_IV_SIZE);
 }
 
-int venc_encrypt(struct venc_cipher *cipher, u8 *block,
-		 const size_t block_length)
+int venc_encrypt(struct venc_cipher *cipher, u8 *block, const size_t block_len)
 {
 	int ret;
 
-	sg_init_one(&cipher->sg, block, block_length);
+	sg_init_one(&cipher->sg, block, block_len);
 
 	skcipher_request_set_callback(cipher->req,
 				      CRYPTO_TFM_REQ_MAY_BACKLOG |
-					      CRYPTO_TFM_REQ_MAY_SLEEP,
+				      CRYPTO_TFM_REQ_MAY_SLEEP,
 				      crypto_req_done, &cipher->wait);
 
 	skcipher_request_set_crypt(cipher->req, &cipher->sg, &cipher->sg,
-				   block_length, cipher->iv);
+				   block_len, cipher->iv);
 
 	ret = crypto_wait_req(crypto_skcipher_encrypt(cipher->req),
 			      &cipher->wait);
@@ -79,26 +78,24 @@ int venc_encrypt(struct venc_cipher *cipher, u8 *block,
 	/* 
 	 * CBC / IV
 	 */
-	memcpy(cipher->iv, block + block_length - AES_BLOCK_SIZE,
-	       AES_BLOCK_SIZE);
+	memcpy(cipher->iv, block + block_len - AES_BLOCK_SIZE, AES_BLOCK_SIZE);
 	return 0;
 }
 
-int venc_decrypt(struct venc_cipher *cipher, u8 *block,
-		 const size_t block_length)
+int venc_decrypt(struct venc_cipher *cipher, u8 *block, const size_t block_len)
 {
 	int ret;
 	u8 next_iv[AES_IV_SIZE];
 
-	sg_init_one(&cipher->sg, block, block_length);
+	sg_init_one(&cipher->sg, block, block_len);
 
 	skcipher_request_set_callback(cipher->req,
 				      CRYPTO_TFM_REQ_MAY_BACKLOG |
-					      CRYPTO_TFM_REQ_MAY_SLEEP,
+				      CRYPTO_TFM_REQ_MAY_SLEEP,
 				      crypto_req_done, &cipher->wait);
 
 	skcipher_request_set_crypt(cipher->req, &cipher->sg, &cipher->sg,
-				   block_length, cipher->iv);
+				   block_len, cipher->iv);
 
 	memcpy(next_iv, block, 16);
 	/*
