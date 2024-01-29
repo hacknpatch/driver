@@ -10,12 +10,23 @@
 #define WRITE_MINOR 1
 #define CHAR_DEVICES 2
 
+/*
+ * 0 = decrypt, 1 = encrypt
+ */
 static int mod_param_encrypt = 1;
 module_param_named(encrypt, mod_param_encrypt, int, S_IRUGO);
 
+/*
+ * Hex encoded key, e.g., "C0FFEE0C0DE0C0FFEE0C0DE00FEED0BEEF0BED" for cypher.
+ * needs to be between 16 and 32 bytes long. (i.e. 32 to 64 hex chars).
+ */ 
 static char *mod_param_key;
 module_param_named(key, mod_param_key, charp, S_IRUGO);
 
+/*
+ * This is the number of blocks in the pool. If you make this number large you
+ * might get an out of memory error when loading the module.
+ */
 static int mod_param_num_blocks = 10;
 module_param_named(blocks, mod_param_num_blocks, int, S_IRUGO);
 
@@ -49,8 +60,9 @@ static int pad_last_block(struct vencrypt_ctx *ctx)
 	struct venc_block *block;
 	int err;
 	/*
-	 * check to see if we have an uncomplete buffer from _write, if 
-	 * so pad and encrypt it.
+	 * check to see if we have an uncompleted block from _write, if 
+	 * not we then fetch another empty block and pad it, making sure we 
+	 * always have a padded block at the end.
 	 */
 	block = venc_first_free_or_null(ctx->blocks);
 	if (block == NULL || block->size == AES_BLOCK_SIZE) {
@@ -76,8 +88,8 @@ static void unpad_last_block(struct vencrypt_ctx *ctx)
 {
 	struct venc_block *block;
 	/* 
-	 * we keep the last block in the used list, so we can
-	 * workout its padding length. Then allow it to be sent with actual len.
+	 * we keep the last block in the used list, so we can workout its 
+	 * padding length. Then we use this length for the last block sent.
 	 */
 	block = venc_last_used_or_null(ctx->blocks);
 	if (block != NULL)
