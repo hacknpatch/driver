@@ -8,6 +8,7 @@ struct venc_blocks *venc_alloc_blocks(int num_blocks)
 {
 	struct venc_blocks *blocks;
 	struct venc_block *block;
+	size_t size;
 	int i;
 
 	blocks = kmalloc(sizeof(struct venc_blocks), GFP_KERNEL);
@@ -15,8 +16,8 @@ struct venc_blocks *venc_alloc_blocks(int num_blocks)
 		return NULL;
 	}
 
-	blocks->blocks =
-		kmalloc(num_blocks * sizeof(struct venc_block), GFP_KERNEL);
+	size = num_blocks * sizeof(struct venc_block);
+	blocks->blocks = kmalloc(size, GFP_KERNEL);
 	if (!blocks->blocks) {
 		kfree(blocks);
 		return NULL;
