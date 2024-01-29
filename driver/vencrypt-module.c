@@ -260,15 +260,24 @@ static int __init venc_init(void)
 	u8 key[32] = { 0 };
 	int key_len;
 
+	/*
+	 * this should work with a single buffer, but I haven't tested it.	 
+	 */
+	if (mod_param_num_buffers < 3 || mod_param_num_buffers > 1000) {
+		pr_err("%s: Module param invalid bufs=%d choices: 3-1000\n",
+		       DRIVER_NAME, mod_param_num_buffers);
+		return -EINVAL;
+	}
+
 	if (mod_param_encrypt < 0 || mod_param_encrypt > 1) {
-		pr_err("%s: Invalid crypter encrypt=%d choices: 0=decrypt, 1=encrypt\n",
+		pr_err("%s: Module param invalid encrypt=%d choices: 0=decrypt, 1=encrypt\n",
 		       DRIVER_NAME, mod_param_encrypt);
 		return -EINVAL;
 	}
 
 	key_len = strlen(mod_param_key) / 2;
 	if (key_len < AES_MIN_KEY_SIZE || key_len > AES_MAX_KEY_SIZE) {
-		pr_err("%s: Invalid crypter key length %d it must between %d and %d\n",
+		pr_err("%s: Module param key length %d it must between %d and %d\n",
 		       DRIVER_NAME, key_len, AES_MIN_KEY_SIZE,
 		       AES_MAX_KEY_SIZE);
 		return -EINVAL;
@@ -294,7 +303,7 @@ static int __init venc_init(void)
 
 	err = hex_to_bytes(key, mod_param_key, key_len);
 	if (err) {
-		pr_err("%s: Crypter key is invalid hex\n", DRIVER_NAME);
+		pr_err("%s: Module param key invalid hex\n", DRIVER_NAME);
 		goto err_free_data;
 	}
 

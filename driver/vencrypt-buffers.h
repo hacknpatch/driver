@@ -12,16 +12,16 @@ struct venc_buffer {
 	/* 
 	 * the list the buffer belongs to free or used.
 	 */
-	struct list_head list; 
+	struct list_head list;
 	/*
 	 * the number of bytes allocated in data
 	 */
-	size_t size; 
+	size_t size;
 
 	/*
 	 * the data being encrypted or decrypted
 	 */
-	u8 data[AES_BLOCK_SIZE]; 
+	u8 data[AES_BLOCK_SIZE];
 };
 
 struct venc_buffers {
@@ -42,7 +42,7 @@ struct venc_buffers {
 	 * used for signaling queue changes
 	 */
 	wait_queue_head_t wait;
-	
+
 	/*
 	 * the number of buffers dynamically allocated.
 	 */
