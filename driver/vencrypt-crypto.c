@@ -3,25 +3,6 @@
 
 #include "vencrypt-crypto.h"
 
-/*
- * 
- * name         : cbc(aes)
- * driver       : cbc-aes-aesni
- * module       : aesni_intel
- * priority     : 400
- * refcnt       : 1
- * selftest     : passed
- * internal     : no
- *  type         : skcipher
- * async        : yes
- * blocksize    : 16
- * min keysize  : 16
- * max keysize  : 32
- * ivsize       : 16
- * chunksize    : 16
- * walksize     : 16
- */
-
 void venc_free_cipher(struct venc_cipher *cipher)
 {
 	if (cipher->req)
@@ -100,7 +81,7 @@ int venc_encrypt(struct venc_cipher *cipher, u8 *block,
 	/* 
 	 * CBC / IV
 	 */
-	memcpy(cipher->iv, block + block_length - 16, 16);
+	memcpy(cipher->iv, block + block_length - AES_BLOCK_SIZE, AES_BLOCK_SIZE);
 	return 0;
 }
 
@@ -108,7 +89,7 @@ int venc_decrypt(struct venc_cipher *cipher, u8 *block,
 		 const size_t block_length)
 {
 	int ret;
-	u8 next_iv[16];
+	u8 next_iv[AES_IV_SIZE];
 
 	sg_init_one(&cipher->sg, block, block_length);
 
@@ -135,7 +116,7 @@ int venc_decrypt(struct venc_cipher *cipher, u8 *block,
 	/* 
 	 * CBC / IV
 	 */
-	memcpy(cipher->iv, next_iv, 16);
+	memcpy(cipher->iv, next_iv, AES_IV_SIZE);
 	return 0;
 }
 
@@ -145,7 +126,6 @@ void pkcs7_pad_block(u8 *block, size_t current_size, size_t block_size)
 		return;
 
 	u8 pad_value = block_size - current_size;
-	pr_info("Padding block with %d \n", pad_value);
 	memset(block + current_size, pad_value, pad_value);
 }
 

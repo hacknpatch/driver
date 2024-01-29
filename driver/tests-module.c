@@ -121,14 +121,11 @@ void test_pkcs7_padding(void)
 
 	for (i = 0; i < num_tests; i++) {
 		unsigned int len = original_lengths[i];
-
-		// 0x55 is arbitrary test data
+		
 		memset(test_block, 0x55, len); 
 
-		// Apply PKCS#7 padding
 		pkcs7_pad_block(test_block, len, AES_BLOCK_SIZE);
 
-		// Check if padding is correct
 		unsigned int padded_len = AES_BLOCK_SIZE - len;
 		for (j = len; j < AES_BLOCK_SIZE; j++) {
 			if (test_block[j] != padded_len) {
@@ -157,34 +154,31 @@ void test_cipher_hello(void)
 {
 	struct venc_cipher ctx;
 	int ret;
-	u8 key[32] = { 0 }; // Define a test key (zero-filled for simplicity)
-	unsigned int keylen = 32; // Set key length (e.g., 32 bytes for AES-256)
+	u8 key[32] = { 0 };
+	unsigned int keylen = AES_MAX_KEY_SIZE;
 	u8 original_data1[16] = "hello";
 	u8 encrypted_data1[16];
 	u8 decrypted_data1[16];
 	u8 original_iv[16];
 
 	if (hex_to_bytes(key, TEST_KEY, 32)) {
-		pr_err("Failed to convert key to bytes\n");
+		pr_err("%s Failed to convert key to bytes\n", __func__);
 		return;
 	}
 
-	// Initialize context for encryption with key
 	ret = venc_init_cipher(&ctx, key, keylen);
 	if (ret) {
-		pr_err("Failed to initialize encryption context\n");
+		pr_err("%s Failed to initialize encryption context\n",__func__);
 		return;
 	}
 
 	venc_zero_cipher_iv(&ctx);
 	memcpy(original_iv, ctx.iv, sizeof(ctx.iv));
-	// pkcs7_pad_block(original_data1, strlen(original_data1), AES_BLOCK_SIZE);
-
-	// Copy and Encrypt the first block of data
+	
 	memcpy(encrypted_data1, original_data1, sizeof(original_data1));
 	ret = venc_encrypt(&ctx, encrypted_data1, sizeof(encrypted_data1));
 	if (ret) {
-		pr_err("Encryption of block 1 failed\n");
+		pr_err("%s Encryption of block 1 failed\n", __func__);
 		venc_free_cipher(&ctx);
 		return;
 	}
@@ -192,48 +186,51 @@ void test_cipher_hello(void)
 	venc_free_cipher(&ctx);
 	ret = venc_init_cipher(&ctx, key, keylen);
 	if (ret) {
-		pr_err("Failed to initialize decryption context\n");
+		pr_err("%s Failed to initialize decryption context\n", __func__);
 		return;
 	}
 
-	// Restore the original IV for decryption of the first block
 	memcpy(ctx.iv, original_iv, sizeof(ctx.iv));
 
 	memcpy(decrypted_data1, encrypted_data1, sizeof(encrypted_data1));
 	ret = venc_decrypt(&ctx, decrypted_data1, sizeof(decrypted_data1));
 	if (ret) {
-		pr_err("Decryption of block 1 failed\n");
+		pr_err("%s Decryption of block 1 failed\n", __func__);
 		venc_free_cipher(&ctx);
 		return;
 	}
 
 	if (memcmp(original_data1, decrypted_data1, sizeof(original_data1)) !=
 	    0)
-		pr_err("Test failed: Decrypted data does not match original data for block 1\n");
+		pr_err("%s Test failed: Decrypted data does not match original data for block 1\n", __func__);
 	else
-		pr_info("Test passed: Decrypted data matches original data for block 1\n");		
+		pr_info("%s Test passed: Decrypted data matches original data for block 1\n", __func__);
 
 	venc_free_cipher(&ctx);
 
-	pr_info("Test original: %*ph\n", 16, original_data1);
-	pr_info("Test encrypted: %*ph\n", 16, encrypted_data1);
-	pr_info("Test encrypted: %*ph\n", 16, decrypted_data1);
 	pr_info("Test completed\n");
 }
 
 void test_buffers(void) 
 {
 	struct venc_buffer *buf;
-	struct venc_buffers bufs;
+	struct venc_buffers* bufs;
+	bufs = venc_alloc_buffers(2);
+	if (!bufs) {
+		pr_err("Failed to allocate buffers\n");
+		return;
+	}
 	
-	venc_init_buffers(&bufs);	
-	buf = venc_first_free_or_null(&bufs);
-	venc_move_to_used(&bufs, buf);
-	buf = venc_first_free_or_null(&bufs);
-	buf = venc_first_used_or_null(&bufs);
-	venc_move_to_free(&bufs, buf);
-	buf = venc_first_free_or_null(&bufs);
-	buf = venc_first_used_or_null(&bufs);	
+	buf = venc_first_free_or_null(bufs);
+	venc_move_to_used(bufs, buf);
+	buf = venc_first_free_or_null(bufs);
+	buf = venc_first_used_or_null(bufs);
+	venc_move_to_free(bufs, buf);
+	buf = venc_first_free_or_null(bufs);
+	buf = venc_first_used_or_null(bufs);	
+	venc_free_buffers(bufs);
+	pr_info("%s Test completed\n", __func__);
+
 }
 
 static int __init my_module_init(void)

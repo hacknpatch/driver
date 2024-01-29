@@ -4,23 +4,47 @@
 
 #include "vencrypt-buffers.h"
 
-
-void venc_init_buffers(struct venc_buffers *bufs)
+struct venc_buffers *venc_alloc_buffers(int num_buffers)
 {
-	int i;
+	struct venc_buffers *bufs;
 	struct venc_buffer *buf;
+	int i;
+
+	bufs = kmalloc(sizeof(struct venc_buffers), GFP_KERNEL);
+	if (!bufs) {
+		return NULL;
+	}
+
+	bufs->bufs =
+		kmalloc(num_buffers * sizeof(struct venc_buffer), GFP_KERNEL);
+	if (!bufs->bufs) {
+		kfree(bufs);
+		return NULL;
+	}
+
+	bufs->num_buffers = num_buffers;
 
 	INIT_LIST_HEAD(&bufs->free);
 	INIT_LIST_HEAD(&bufs->used);
 
+	bufs->used_count = 0;
+	bufs->drain = false;
+
 	spin_lock_init(&bufs->lock);
 	init_waitqueue_head(&bufs->wait);
-	bufs->used_count = 0;
 
-	for (i = 0; i < sizeof(bufs->bufs) / sizeof(struct venc_buffer); i++) {
+	for (i = 0; i < num_buffers; i++) {
 		buf = &bufs->bufs[i];
 		list_add_tail(&buf->list, &bufs->free);
 	}
+
+	return bufs;
+}
+
+void venc_free_buffers(struct venc_buffers *bufs)
+{
+	kfree(bufs->bufs);
+	kfree(bufs);
 }
 
 void venc_move_to_used(struct venc_buffers *bufs, struct venc_buffer *buf)
@@ -66,8 +90,7 @@ struct venc_buffer *venc_last_used_or_null(struct venc_buffers *bufs)
 	return list_last_entry(&bufs->used, struct venc_buffer, list);
 }
 
-static
-bool venc_used_available(struct venc_buffers *bufs)
+static bool venc_used_available(struct venc_buffers *bufs)
 {
 	bool available;
 	spin_lock(&bufs->lock);
@@ -80,14 +103,14 @@ int venc_wait_for_used(struct venc_buffers *bufs, struct venc_buffer **buf)
 {
 	// int err = wait_event_interruptible(
 	// 	bufs->wait, (bufs->used_count > 1 || bufs->drain));
-	int err = wait_event_interruptible(
-		bufs->wait, (venc_used_available(bufs)));
+	int err = wait_event_interruptible(bufs->wait,
+					   (venc_used_available(bufs)));
 
 	if (err)
 		return err;
 
 	*buf = venc_first_used_or_null(bufs);
-	return 0;	
+	return 0;
 }
 
 void venc_drain(struct venc_buffers *bufs)
