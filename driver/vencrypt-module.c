@@ -32,7 +32,7 @@ static int encode_buf(struct venc_cipher *cipher, struct venc_buffer *buf)
 
 	if (buf->size == 0)
 		return 0;
-	
+
 	if (mod_param_encrypt)
 		err = venc_encrypt(cipher, buf->data, buf->size);
 	else
@@ -92,7 +92,7 @@ static int venc_open(struct inode *inode, struct file *file)
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
 	int err;
-	
+
 	minor = iminor(inode);
 
 	if (minor == READ_MINOR && file->f_mode & FMODE_WRITE)
@@ -109,7 +109,7 @@ static int venc_open(struct inode *inode, struct file *file)
 	file->private_data = ctx;
 
 	err = 0;
-	
+
 	if (minor == WRITE_MINOR) {
 		/*
 		 * if drain is set, it means a reader is still reading, so we
@@ -312,19 +312,19 @@ static int __init venc_init(void)
 
 	cdev_init(&driver_ctx->cdev, &vencrypt_fops);
 	driver_ctx->cdev.owner = THIS_MODULE;
-		
+
 	dev = device_create(driver_device_class, NULL,
 			    MKDEV(driver_major, READ_MINOR), driver_ctx,
-			    "%s_%s", DRIVER_NAME, 
-			    mod_param_encrypt == 0 ? "pt": "ct");
+			    "%s_%s", DRIVER_NAME,
+			    mod_param_encrypt == 0 ? "pt" : "ct");
 	if (IS_ERR(dev)) {
 		err = PTR_ERR(dev);
 		goto err_free_buffers;
 	}
-	
+
 	dev = device_create(driver_device_class, NULL,
 			    MKDEV(driver_major, WRITE_MINOR), driver_ctx,
-			    "%s_%s", DRIVER_NAME, 
+			    "%s_%s", DRIVER_NAME,
 			    mod_param_encrypt == 0 ? "ct" : "pt");
 	if (IS_ERR(dev)) {
 		err = PTR_ERR(dev);

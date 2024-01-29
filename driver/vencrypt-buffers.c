@@ -132,6 +132,6 @@ int venc_drain(struct venc_buffers *bufs)
 
 int venc_wait_for_drain(struct venc_buffers *bufs, bool drain)
 {
-	return wait_event_interruptible(
-		bufs->wait, (venc_drain(bufs) == drain));
+	return wait_event_interruptible(bufs->wait,
+					(venc_drain(bufs) == drain));
 }

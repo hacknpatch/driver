@@ -9,20 +9,48 @@
 #include "vencrypt-crypto.h"
 
 struct venc_buffer {
-	struct list_head list; /* the list the buffer belongs to free or used.*/
-	size_t size; /* the number of bytes in data */
-	u8 data[AES_BLOCK_SIZE]; /* the data being encrypted or decrypted*/
+	/* 
+	 * the list the buffer belongs to free or used.
+	 */
+	struct list_head list; 
+	/*
+	 * the number of bytes allocated in data
+	 */
+	size_t size; 
+
+	/*
+	 * the data being encrypted or decrypted
+	 */
+	u8 data[AES_BLOCK_SIZE]; 
 };
 
 struct venc_buffers {
 	struct list_head free;
 	struct list_head used;
+	/*
+	 * a count of the number of buffers in the used list.
+	 */
 	int used_count;
+	/*
+	 * used for draining used buffers, new writer opens are blocked until 
+	 * this flag is cleared
+	 */
 	bool drain;
 
 	spinlock_t lock;
-	wait_queue_head_t wait; /* used for signaling queue changes */
+	/* 
+	 * used for signaling queue changes
+	 */
+	wait_queue_head_t wait;
+	
+	/*
+	 * the number of buffers dynamically allocated.
+	 */
 	int num_buffers;
+
+	/* 
+	  * the blocks / buffers containing the data.
+	  */
 	struct venc_buffer *bufs;
 };
 
