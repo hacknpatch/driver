@@ -49,7 +49,7 @@ int venc_init_cipher(struct venc_cipher *cipher, const u8 *key,
 		return -ENOMEM;
 	}
 
-	memset(cipher->iv, 0, sizeof(cipher->iv));
+	memset(cipher->iv, 0, AES_IV_SIZE);
 
 	init_completion(&cipher->wait.completion);
 
@@ -66,12 +66,12 @@ int venc_init_cipher(struct venc_cipher *cipher, const u8 *key,
 
 void venc_zero_cipher_iv(struct venc_cipher *cipher)
 {
-	memset(cipher->iv, 0, sizeof(cipher->iv));
+	memset(cipher->iv, 0, AES_IV_SIZE);
 }
 
 void venc_random_cipher_iv(struct venc_cipher *cipher)
 {
-	get_random_bytes(cipher->iv, sizeof(cipher->iv));
+	get_random_bytes(cipher->iv, AES_IV_SIZE);
 }
 
 int venc_encrypt(struct venc_cipher *cipher, u8 *block,

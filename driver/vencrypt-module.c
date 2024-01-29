@@ -93,12 +93,12 @@ static int last_block_encrypt_pkcs7(struct vencrypt_ctx *ctx)
 			DRIVER_NAME, err);
 			return err;
 		}
-		memset(buf->data, 0, sizeof(buf->data));
+		memset(buf->data, 0, AES_BLOCK_SIZE);
 		buf->size = 0;
 		pr_info("%s: padding last block\n", DRIVER_NAME);
 	}
 	
-	pkcs7_pad_block(buf->data, buf->size, sizeof(buf->data));
+	pkcs7_pad_block(buf->data, buf->size, AES_BLOCK_SIZE);
 	buf->size = AES_BLOCK_SIZE;
 	venc_encrypt(&ctx->cipher, buf->data, buf->size);
 	venc_move_to_used(&ctx->bufs, buf);
@@ -221,14 +221,14 @@ static ssize_t vencrypt_write(struct file *file, const char __user *user_buf,
 	if (err)
 		return err;
 
-	copied = min(sizeof(buf->data) - buf->size, count);
+	copied = min(AES_BLOCK_SIZE - buf->size, count);
 
 	if (copy_from_user(&buf->data[buf->size], user_buf, copied))
 		return -EFAULT;
 
 	buf->size += copied;
 
-	free = sizeof(buf->data) - buf->size;
+	free = AES_BLOCK_SIZE - buf->size;
 	if (free == 0) {
 		encode_buf(&ctx->cipher, buf);
 		venc_move_to_used(&ctx->bufs, buf);
@@ -290,10 +290,10 @@ static int __init vencrypt_init(void)
 	}
 
 	key_len = strlen(mod_param_key) / 2;
-	if (key_len < CBC_AES_MIN_KEY_SIZE || key_len > CBC_AES_MAX_KEY_SIZE) {
+	if (key_len < AES_MIN_KEY_SIZE || key_len > AES_MAX_KEY_SIZE) {
 		pr_err("%s: Invalid crypter key length %d it must between %d and %d\n",
-		       DRIVER_NAME, key_len, CBC_AES_MIN_KEY_SIZE,
-		       CBC_AES_MAX_KEY_SIZE);
+		       DRIVER_NAME, key_len, AES_MIN_KEY_SIZE,
+		       AES_MAX_KEY_SIZE);
 		return -EINVAL;
 	}
 
@@ -321,7 +321,7 @@ static int __init vencrypt_init(void)
 		goto err_free_data;
 	}
 
-	err = venc_init_cipher(&driver_ctx->cipher, key, sizeof(key));
+	err = venc_init_cipher(&driver_ctx->cipher, key, AES_MAX_KEY_SIZE);
 	if (err) {
 		pr_err("%s: Crypter setup failed err %d\n", DRIVER_NAME, err);
 		goto err_free_data;

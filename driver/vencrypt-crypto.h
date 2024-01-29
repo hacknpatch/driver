@@ -7,8 +7,8 @@
 #include <crypto/skcipher.h> // for struct skcipher_request
 #include <linux/types.h> // for bool and u8
 
-#define CBC_AES_MIN_KEY_SIZE 16
-#define CBC_AES_MAX_KEY_SIZE 32
+#define AES_MIN_KEY_SIZE 16
+#define AES_MAX_KEY_SIZE 32
 #define AES_BLOCK_SIZE 16
 #define AES_IV_SIZE 16
 
@@ -18,7 +18,7 @@ struct venc_cipher {
 	struct scatterlist sg;
 	struct crypto_wait wait;
 	u8 iv[AES_IV_SIZE];
-	u8 key[CBC_AES_MAX_KEY_SIZE];
+	u8 key[AES_MAX_KEY_SIZE];
 };
 
 size_t pkcs7_block_len(u8 *block, size_t block_size);
