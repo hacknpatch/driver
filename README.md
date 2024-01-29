@@ -1,15 +1,17 @@
 # driver
-I have only tested this driver in ubuntu 22.04 - 64bit x86 so far with the kernel
-`6.5.0-14-generic`. I would like to cross-compile for 32bit arm and test
-with qemu via github actions if I had time [https://github.com/hacknpatch/driver/issues/5]
 
 ## build
-
+The source code and Makefile are located in the driver directory. There is also a helper install module bash script at 
+the root of the repository. You can execute it from either directory. Use the following commands:
 ```shell
 cd ./driver
 make
 ../mod_install.sh 1
 ```
+
+Note: I have only tested this driver on Ubuntu 22.04 - 64bit x86 so far, with the kernel version 6.5.0-14-generic. I am 
+interested in cross-compiling for 32bit ARM and testing with QEMU via GitHub Actions when I have the time. For more 
+information, see Issue #5 in GitHub.
 
 ## usage:
 
@@ -34,7 +36,8 @@ Set the module parameter to encrypt=0 to input encrypted data at `/dev/vencrypt_
 `/dev/vencrypt_pt`.
 
 ### quick example
-encrypt
+
+#### encrypt
 ```shell
 ../mod_install.sh 1
 echo "hello" > /dev/vencrypt_pt
@@ -42,7 +45,7 @@ cat /dev/vencrypt_ct | base64
 $ WasyktyxbiO5e0zq2dDDwA==
 ```
 
-decrypt
+#### decrypt
 ```shell
 ../mod_install.sh 0
 echo "WasyktyxbiO5e0zq2dDDwA==" | base64 -d > /dev/vencrypt_ct
@@ -50,6 +53,64 @@ cat /dev/vencrypt_pt
 $ hello
 ```
 
+#### small file example:
+```
+../mod_install.sh 1
+
+echo hello > hello.txt
+
+cat hello.txt > /dev/vencrypt_pt
+cat /dev/vencrypt_ct > hello.bin
+
+../mod_install.sh 0
+
+cat hello.bin > /dev/vencrypt_ct
+cat /dev/vencrypt_pt > hello2.txt
+
+cat hello2.txt
+```
+Note: If anything goes wrong, ensure that you drain the buffer by running `cat /dev/vencrypt_ct` until it blocks. 
+Alternatively, you can reload the module using `../mod_install.sh 1`.
+
+#### Large file example:
+For large files, you will need two shells. This is necessary because when the buffer fills up during writing, the writer
+will be blocked.
+
+##### encrypt
+1st shell:
+```
+../mod_install.sh 1
+
+cat test.tar.gz > /dev/vencrypt_pt
+```
+2nd shell:
+```
+cat /dev/vencrypt_ct > test.bin
+```
+
+##### decrypt
+1st shell:
+```
+../mod_install.sh 0
+
+cat test.bin > /dev/vencrypt_ct
+```
+2nd shell:
+```
+cat /dev/vencrypt_pt > test2.tar.gz
+
+diff test.tar.gz test2.tar.gz
+```
+
+What is interesting is that with larger files, I observe double the performance when using a simple Python script as 
+compared to using `cat`.  
+Python example:
+```python
+with open('test2.tar.gz', 'wb') as wf:
+    with open('/dev/vencrypt_pt', 'rb') as f:
+        while c := f.read(16 * 1000):
+            wf.write(c)
+```
 
 ## linux kernel formatting
 I'm using clang-format to format my code.
@@ -60,7 +121,6 @@ find . -type f -name 'venc*.[ch]' -exec clang-format -style=file:../clang-fmt.tx
 The format file I use is https://github.com/torvalds/linux/blob/master/.clang-format
 
 ## machine environment
-
 my current environment is:
 ```shell
 uname -a
