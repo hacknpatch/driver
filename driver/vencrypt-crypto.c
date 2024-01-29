@@ -5,10 +5,8 @@
 
 void venc_free_cipher(struct venc_cipher *cipher)
 {
-	if (cipher->req)
-		skcipher_request_free(cipher->req);
-	if (cipher->tfm)
-		crypto_free_skcipher(cipher->tfm);
+	skcipher_request_free(cipher->req);
+	crypto_free_skcipher(cipher->tfm);
 }
 
 int venc_init_cipher(struct venc_cipher *cipher, const u8 *key,
