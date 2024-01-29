@@ -26,11 +26,10 @@ void pkcs7_pad_block(u8 *block, size_t current_size, size_t block_size);
 
 int venc_init_cipher(struct venc_cipher *cipher, const u8 *key,
 		     unsigned int keylen);
+void venc_free_cipher(struct venc_cipher *cipher);
 
 void venc_zero_cipher_iv(struct venc_cipher *cipher);
 void venc_random_cipher_iv(struct venc_cipher *cipher);
-
-void venc_free_cipher(struct venc_cipher *cipher);
 
 int venc_encrypt(struct venc_cipher *cipher, u8 *block,
 		 const size_t block_length);

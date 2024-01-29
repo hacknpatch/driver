@@ -4,7 +4,7 @@ wildcard="/dev/${module}_*"
 if [ -n "$1" ]; then
     encrypt=$1
 else
-    encrypt=2
+    encrypt=1
 fi
 
 for d in ${wildcard}; do

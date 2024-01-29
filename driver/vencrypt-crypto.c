@@ -3,12 +3,6 @@
 
 #include "vencrypt-crypto.h"
 
-void venc_free_cipher(struct venc_cipher *cipher)
-{
-	skcipher_request_free(cipher->req);
-	crypto_free_skcipher(cipher->tfm);
-}
-
 int venc_init_cipher(struct venc_cipher *cipher, const u8 *key,
 		     unsigned int keylen)
 {
@@ -41,6 +35,12 @@ int venc_init_cipher(struct venc_cipher *cipher, const u8 *key,
 	}
 
 	return 0;
+}
+
+void venc_free_cipher(struct venc_cipher *cipher)
+{
+	skcipher_request_free(cipher->req);
+	crypto_free_skcipher(cipher->tfm);
 }
 
 void venc_zero_cipher_iv(struct venc_cipher *cipher)
