@@ -120,3 +120,18 @@ void venc_set_drain(struct venc_buffers *bufs, bool drain)
 	spin_unlock(&bufs->lock);
 	wake_up_interruptible(&bufs->wait);
 }
+
+int venc_drain(struct venc_buffers *bufs)
+{
+	bool drain;
+	spin_lock(&bufs->lock);
+	drain = bufs->drain;
+	spin_unlock(&bufs->lock);
+	return drain;
+}
+
+int venc_wait_for_drain(struct venc_buffers *bufs, bool drain)
+{
+	return wait_event_interruptible(
+		bufs->wait, (venc_drain(bufs) == drain));
+}

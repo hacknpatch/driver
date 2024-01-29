@@ -96,7 +96,8 @@ static int venc_open(struct inode *inode, struct file *file)
 {
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
-
+	int err;
+	
 	minor = iminor(inode);
 
 	if (minor == READ_MINOR && file->f_mode & FMODE_WRITE)
@@ -112,12 +113,22 @@ static int venc_open(struct inode *inode, struct file *file)
 
 	file->private_data = ctx;
 
-	/* 
-	* Writer does encryption, so this is safe to clear IV. The unread bufs
-	* in used queue will be in the drian state until the reader closes.
-	*/
-	if (minor == WRITE_MINOR)
-		venc_zero_cipher_iv(&ctx->cipher);
+	err = 0;
+	
+	if (minor == WRITE_MINOR) {
+		/*
+		 * if drain is set, it means a reader is still reading, so we
+		 * need to wait for it to finish.
+		 */
+		err = venc_wait_for_drain(ctx->bufs, false);
+		/* 
+		 * writer does encryption, so this is safe to clear IV. The 
+		 * unread bufs in used queue will be in the drian state until the
+		 * reader closes.
+		 */
+		if (!err)
+			venc_zero_cipher_iv(&ctx->cipher);
+	}
 
 	return 0;
 }
