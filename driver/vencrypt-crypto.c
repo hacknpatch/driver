@@ -81,7 +81,8 @@ int venc_encrypt(struct venc_cipher *cipher, u8 *block,
 	/* 
 	 * CBC / IV
 	 */
-	memcpy(cipher->iv, block + block_length - AES_BLOCK_SIZE, AES_BLOCK_SIZE);
+	memcpy(cipher->iv, block + block_length - AES_BLOCK_SIZE,
+	       AES_BLOCK_SIZE);
 	return 0;
 }
 

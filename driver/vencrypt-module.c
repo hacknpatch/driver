@@ -179,15 +179,8 @@ static ssize_t vencrypt_read(struct file *file, char __user *user_buf,
 	if (err)
 		return err;
 
-	if (buf == NULL) {
-		// TODO: cleanup
-		// return 0 ? ctx->bufs->drain : -EIO;
-		// if (ctx->bufs->drain)
-		if (drain)
-			return 0;
-		else
-			return -EIO;
-	}
+	if (buf == NULL)
+		return drain ? 0 : -EIO;
 
 	if (buf->size == 0)
 		return 0;
