@@ -245,28 +245,6 @@ static ssize_t venc_write(struct file *file, const char __user *user_buf,
 	return copied;
 }
 
-static const char *dev_read_prefix(void)
-{
-	switch (mod_param_encrypt) {
-	case 0:
-		return "pt";
-	case 1:
-		return "ct";
-	}
-	return "invalid_r";
-}
-
-static const char *dev_write_prefix(void)
-{
-	switch (mod_param_encrypt) {
-	case 0:
-		return "ct";
-	case 1:
-		return "pt";
-	}
-	return "invalid_w";
-}
-
 static const struct file_operations vencrypt_fops = {
 	.owner = THIS_MODULE,
 	.open = venc_open,
@@ -339,18 +317,20 @@ static int __init venc_init(void)
 
 	cdev_init(&driver_ctx->cdev, &vencrypt_fops);
 	driver_ctx->cdev.owner = THIS_MODULE;
-
+		
 	dev = device_create(driver_device_class, NULL,
 			    MKDEV(driver_major, READ_MINOR), driver_ctx,
-			    "%s_%s", DRIVER_NAME, dev_read_prefix());
+			    "%s_%s", DRIVER_NAME, 
+			    mod_param_encrypt == 0 ? "pt": "ct");
 	if (IS_ERR(dev)) {
 		err = PTR_ERR(dev);
 		goto err_free_buffers;
 	}
-
+	
 	dev = device_create(driver_device_class, NULL,
 			    MKDEV(driver_major, WRITE_MINOR), driver_ctx,
-			    "%s_%s", DRIVER_NAME, dev_write_prefix());
+			    "%s_%s", DRIVER_NAME, 
+			    mod_param_encrypt == 0 ? "ct" : "pt");
 	if (IS_ERR(dev)) {
 		err = PTR_ERR(dev);
 		device_destroy(driver_device_class,
