@@ -35,17 +35,10 @@ static int encode_buf(struct venc_cipher *cipher, struct venc_buffer *buf)
 	if (mod_param_encrypt == 2)
 		return 0;
 
-	if (mod_param_encrypt) {
-		if (buf->size != sizeof(buf->data)) {
-			pkcs7_pad_block(buf->data, buf->size,
-					sizeof(buf->data));
-			buf->size = sizeof(buf->data);
-		}
+	if (mod_param_encrypt)
 		err = venc_encrypt(cipher, buf->data, buf->size);
-	} else {
+	else
 		err = venc_decrypt(cipher, buf->data, buf->size);
-		buf->size = pkcs7_block_len(buf->data, buf->size);
-	}
 
 	if (err)
 		pr_err("%s: encode_buf failed: %d\n", DRIVER_NAME, err);
@@ -93,14 +86,26 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
 	if (minor == WRITE_MINOR) {
-		buf = venc_first_free_or_null(&ctx->bufs);
+		
 		/*
 		 * check to see if we have an uncomplete buffer from _write, if 
 		 * so pad and encrypt it.
 		 */
-		if (buf != NULL && buf->size) {
-			encode_buf(&ctx->cipher, buf);
+		if (mod_param_encrypt) {
+			buf = venc_first_free_or_null(&ctx->bufs);
+			if (buf == NULL || buf->size == AES_BLOCK_SIZE)
+				if (venc_wait_for_free(&ctx->bufs, &buf))
+					return -ERESTARTSYS;
+			pkcs7_pad_block(buf->data, buf->size, sizeof(buf->data));
+			venc_encrypt(&ctx->cipher, buf->data, buf->size);
 			venc_move_to_used(&ctx->bufs, buf);
+		} else {
+			// implements pkcs7 unpadding!!!
+			// buf = venc_first_free_or_null(&ctx->bufs);
+			// venc_decrypt(&ctx->cipher, buf->data, buf->size);
+			// buf->size = pkcs7_block_len(buf->data, buf->size);
+			// pr_info("%s: decrypted size %zu\n", DRIVER_NAME, buf->size);
+			// venc_move_to_used(&ctx->bufs, buf);
 		}
 
 		/* 
