@@ -2,14 +2,7 @@
 I have only tested this driver in ubuntu 22.04 - 64bit x86 so far with the kernel
 `6.5.0-14-generic`. I would like to cross-compile for 32bit arm and test
 with qemu via github actions if I had time [https://github.com/hacknpatch/driver/issues/5]
-
-TODOs:
-* encryption using linux kernel API. [https://github.com/hacknpatch/driver/issues/1]
-* locking. [https://github.com/hacknpatch/driver/issues/2]
-* clean up the state logic. [https://github.com/hacknpatch/driver/issues/3]
-* deal with paritally read packet / message when new writer reopens [https://github.com/hacknpatch/driver/issues/4]
-  
-
+ 
 ## build 
 
 ```shell
