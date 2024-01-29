@@ -32,12 +32,7 @@ static int encode_buf(struct venc_cipher *cipher, struct venc_buffer *buf)
 
 	if (buf->size == 0)
 		return 0;
-	/*
-	 * used for testing, i.e. 2 = don't encrypt
-	 */
-	if (mod_param_encrypt == 2)
-		return 0;
-
+	
 	if (mod_param_encrypt)
 		err = venc_encrypt(cipher, buf->data, buf->size);
 	else
