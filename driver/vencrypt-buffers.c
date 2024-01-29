@@ -113,14 +113,10 @@ int venc_wait_for_used(struct venc_buffers *bufs, struct venc_buffer **buf,
 	return 0;
 }
 
-void venc_drain(struct venc_buffers *bufs)
+void venc_set_drain(struct venc_buffers *bufs, bool drain)
 {
-	WRITE_ONCE(bufs->drain, true);
-	wake_up_interruptible(&bufs->wait);
-}
-
-void venc_clear_drain(struct venc_buffers *bufs)
-{
-	WRITE_ONCE(bufs->drain, false);
+	spin_lock(&bufs->lock);
+	bufs->drain = drain;
+	spin_unlock(&bufs->lock);
 	wake_up_interruptible(&bufs->wait);
 }

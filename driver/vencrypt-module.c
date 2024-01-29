@@ -143,14 +143,14 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 		 * drain the out buffers, then fops read will return 0 until 
 		 * next reader closes / releases.
 		 */
-		venc_drain(ctx->bufs);
+		venc_set_drain(ctx->bufs, true);
 
 	} else if (minor == READ_MINOR) {
 		/*
 		 * TODO: consider what to do if read exists but there is still
 		 * data in the used list?
 		 */
-		venc_clear_drain(ctx->bufs);
+		venc_set_drain(ctx->bufs, false);
 	}
 
 	smp_mb__before_atomic();
