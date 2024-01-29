@@ -1,9 +1,9 @@
 #include <linux/module.h>
 #include <linux/cdev.h>
 
-#include "vencrypt-strings.h"
-#include "vencrypt-blocks.h"
-#include "vencrypt-crypto.h"
+#include "strings.h"
+#include "blocks.h"
+#include "crypto.h"
 
 #define DRIVER_NAME "vencrypt"
 #define READ_MINOR 0

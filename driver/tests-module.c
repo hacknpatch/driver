@@ -14,9 +14,9 @@
 #include <linux/sysfs.h>
 #include <linux/string.h>
 
-#include "vencrypt-crypto.h"
-#include "vencrypt-blocks.h"
-#include "vencrypt-strings.h"
+#include "crypto.h"
+#include "blocks.h"
+#include "strings.h"
 
 #define AES_BLOCK_SIZE 16
 #define MODULE_NAME "tests"

@@ -1,7 +1,7 @@
 #include <linux/string.h>
 #include <linux/errno.h>
 
-#include "vencrypt-strings.h"
+#include "strings.h"
 
 static int char_to_nibble(char c)
 {

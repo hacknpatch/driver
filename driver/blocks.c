@@ -2,7 +2,7 @@
 #include <linux/kernel.h>
 #include <linux/fs.h>
 
-#include "vencrypt-blocks.h"
+#include "blocks.h"
 
 struct venc_blocks *venc_alloc_blocks(int num_blocks)
 {

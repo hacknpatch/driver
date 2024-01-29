@@ -1,7 +1,7 @@
 #include <linux/random.h>
 #include <linux/string.h>
 
-#include "vencrypt-crypto.h"
+#include "crypto.h"
 
 int venc_init_cipher(struct venc_cipher *cipher, const u8 *key,
 		     unsigned int keylen)

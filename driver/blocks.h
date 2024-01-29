@@ -6,7 +6,7 @@
 #include <linux/wait.h>
 #include <linux/types.h>
 
-#include "vencrypt-crypto.h"
+#include "crypto.h"
 
 struct venc_block {
 	/* 
