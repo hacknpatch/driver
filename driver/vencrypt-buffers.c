@@ -15,6 +15,7 @@ void venc_init_buffers(struct venc_buffers *bufs)
 
 	spin_lock_init(&bufs->lock);
 	init_waitqueue_head(&bufs->wait);
+	bufs->used_count = 0;
 
 	for (i = 0; i < sizeof(bufs->bufs) / sizeof(struct venc_buffer); i++) {
 		buf = &bufs->bufs[i];
@@ -27,6 +28,7 @@ void venc_move_to_used(struct venc_buffers *bufs, struct venc_buffer *buf)
 	spin_lock(&bufs->lock);
 	list_del(&buf->list);
 	list_add_tail(&buf->list, &bufs->used);
+	bufs->used_count++;
 	spin_unlock(&bufs->lock);
 	wake_up_interruptible(&bufs->wait);
 }
@@ -34,6 +36,7 @@ void venc_move_to_used(struct venc_buffers *bufs, struct venc_buffer *buf)
 void venc_move_to_free(struct venc_buffers *bufs, struct venc_buffer *buf)
 {
 	spin_lock(&bufs->lock);
+	bufs->used_count--;
 	list_del(&buf->list);
 	list_add_tail(&buf->list, &bufs->free);
 	spin_unlock(&bufs->lock);
@@ -56,11 +59,25 @@ struct venc_buffer *venc_first_used_or_null(struct venc_buffers *bufs)
 	return list_first_entry_or_null(&bufs->used, struct venc_buffer, list);
 }
 
+struct venc_buffer *venc_last_used_or_null(struct venc_buffers *bufs)
+{
+	if (list_empty(&bufs->used))
+		return NULL;
+	return list_last_entry(&bufs->used, struct venc_buffer, list);
+}
+
 int venc_wait_for_used(struct venc_buffers *bufs, struct venc_buffer **buf)
 {
-	return wait_event_interruptible(
-		bufs->wait, ((*buf = venc_first_used_or_null(bufs)) != NULL ||
-			     READ_ONCE(bufs->drain)));
+	// return wait_event_interruptible(
+	// 	bufs->wait, ((*buf = venc_first_used_or_null(bufs)) != NULL ||
+	// 		     READ_ONCE(bufs->drain)));
+	int err = wait_event_interruptible(
+		bufs->wait, (bufs->used_count > 1 || bufs->drain));
+	if (err)
+		return err;
+
+	*buf = venc_first_used_or_null(bufs);
+	return 0;	
 }
 
 void venc_drain(struct venc_buffers *bufs)

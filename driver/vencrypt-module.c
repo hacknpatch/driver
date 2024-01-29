@@ -101,16 +101,20 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 				pr_info("%s: padding last block\n", DRIVER_NAME);
 			}
 			pkcs7_pad_block(buf->data, buf->size, sizeof(buf->data));
-			buf->size = sizeof(buf->data);
+			buf->size = AES_BLOCK_SIZE;
 			venc_encrypt(&ctx->cipher, buf->data, buf->size);
 			venc_move_to_used(&ctx->bufs, buf);
+
 		} else {
-			// implements pkcs7 unpadding!!!
-			// buf = venc_first_free_or_null(&ctx->bufs);
-			// venc_decrypt(&ctx->cipher, buf->data, buf->size);
-			// buf->size = pkcs7_block_len(buf->data, buf->size);
-			// pr_info("%s: decrypted size %zu\n", DRIVER_NAME, buf->size);
-			// venc_move_to_used(&ctx->bufs, buf);
+			// we keep the last block in the used list, so we can
+			// workout its padding length. Then allow it to be sent.
+			buf = venc_last_used_or_null(&ctx->bufs);
+			if (buf != NULL) {				
+				buf->size = pkcs7_block_len(buf->data, buf->size);
+				pr_info("%s: decrypted size %zu\n", DRIVER_NAME, buf->size);
+			} else {
+				pr_err("%s: no last block\n", DRIVER_NAME);
+			}
 		}
 
 		/* 
