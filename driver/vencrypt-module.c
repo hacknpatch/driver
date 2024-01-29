@@ -166,6 +166,7 @@ static ssize_t vencrypt_read(struct file *file, char __user *user_buf,
 	struct vencrypt_ctx *ctx;
 	struct venc_buffer *buf;
 	size_t to_copy;
+	bool drain;
 
 	minor = iminor(file_inode(file));
 
@@ -174,13 +175,15 @@ static ssize_t vencrypt_read(struct file *file, char __user *user_buf,
 
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
-	err = venc_wait_for_used(ctx->bufs, &buf);
+	err = venc_wait_for_used(ctx->bufs, &buf, &drain);
 	if (err)
 		return err;
 
 	if (buf == NULL) {
 		// TODO: cleanup
-		if (ctx->bufs->drain)
+		// return 0 ? ctx->bufs->drain : -EIO;
+		// if (ctx->bufs->drain)
+		if (drain)
 			return 0;
 		else
 			return -EIO;

@@ -90,21 +90,22 @@ struct venc_buffer *venc_last_used_or_null(struct venc_buffers *bufs)
 	return list_last_entry(&bufs->used, struct venc_buffer, list);
 }
 
-static bool venc_used_available(struct venc_buffers *bufs)
+static bool venc_used_available(struct venc_buffers *bufs, bool *drain)
 {
 	bool available;
 	spin_lock(&bufs->lock);
 	available = bufs->used_count > 1 || bufs->drain;
+	*drain = bufs->drain;
 	spin_unlock(&bufs->lock);
 	return available;
 }
 
-int venc_wait_for_used(struct venc_buffers *bufs, struct venc_buffer **buf)
+int venc_wait_for_used(struct venc_buffers *bufs, struct venc_buffer **buf, bool *drain)
 {
 	// int err = wait_event_interruptible(
 	// 	bufs->wait, (bufs->used_count > 1 || bufs->drain));
 	int err = wait_event_interruptible(bufs->wait,
-					   (venc_used_available(bufs)));
+					   (venc_used_available(bufs, drain)));
 
 	if (err)
 		return err;

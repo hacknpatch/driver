@@ -37,7 +37,7 @@ struct venc_buffer *venc_first_used_or_null(struct venc_buffers *bufs);
 struct venc_buffer *venc_last_used_or_null(struct venc_buffers *bufs);
 
 int venc_wait_for_free(struct venc_buffers *bufs, struct venc_buffer **buf);
-int venc_wait_for_used(struct venc_buffers *bufs, struct venc_buffer **buf);
+int venc_wait_for_used(struct venc_buffers *bufs, struct venc_buffer **buf, bool *drain);
 
 void venc_drain(struct venc_buffers *bufs);
 void venc_clear_drain(struct venc_buffers *bufs);
