@@ -102,8 +102,6 @@ static bool venc_used_available(struct venc_buffers *bufs, bool *drain)
 
 int venc_wait_for_used(struct venc_buffers *bufs, struct venc_buffer **buf, bool *drain)
 {
-	// int err = wait_event_interruptible(
-	// 	bufs->wait, (bufs->used_count > 1 || bufs->drain));
 	int err = wait_event_interruptible(bufs->wait,
 					   (venc_used_available(bufs, drain)));
 
