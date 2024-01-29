@@ -81,10 +81,12 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
 	struct venc_buffer *buf;
+	int err;
 
 	minor = iminor(inode);
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
+	err = 0;
 	if (minor == WRITE_MINOR) {
 		
 		/*
@@ -94,8 +96,13 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 		if (mod_param_encrypt) {
 			buf = venc_first_free_or_null(&ctx->bufs);
 			if (buf == NULL || buf->size == AES_BLOCK_SIZE) {
-				if (venc_wait_for_free(&ctx->bufs, &buf))
-					return -ERESTARTSYS;
+				pr_info("%s: padding getting out buff\n", DRIVER_NAME);
+				err = venc_wait_for_free(&ctx->bufs, &buf);
+				if (err) {
+					pr_err("%s: wait for free buf failed with %d\n",
+					DRIVER_NAME, err);
+					goto leave;
+				}
 				memset(buf->data, 0, sizeof(buf->data));
 				buf->size = 0;
 				pr_info("%s: padding last block\n", DRIVER_NAME);
@@ -131,9 +138,10 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 		venc_clear_drain(&ctx->bufs);
 	}
 
+leave:
 	smp_mb__before_atomic();
 	clear_bit_unlock(minor, &ctx->open_flags);
-	return 0;
+	return err;
 }
 
 static ssize_t vencrypt_read(struct file *file, char __user *user_buf,

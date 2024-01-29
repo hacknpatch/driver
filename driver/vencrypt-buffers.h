@@ -16,10 +16,11 @@ struct venc_buffers {
 	struct list_head free;
 	struct list_head used;
 	int used_count;
-
 	bool drain;
+
 	spinlock_t lock;
 	wait_queue_head_t wait; /* used for signaling queue changes */
+	int buf_count;
 	struct venc_buffer bufs[10];
 };
 
