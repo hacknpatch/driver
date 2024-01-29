@@ -269,7 +269,7 @@ static int __init venc_init(void)
 {
 	int err;
 	struct device *dev;
-	u8 key[32] = { 0 };
+	u8 key[AES_MAX_KEY_SIZE] = { 0 };
 	int key_len;
 
 	/*
