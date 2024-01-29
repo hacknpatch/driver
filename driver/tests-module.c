@@ -15,7 +15,7 @@
 #include <linux/string.h>
 
 #include "vencrypt-crypto.h"
-#include "vencrypt-buffers.h"
+#include "vencrypt-blocks.h"
 #include "vencrypt-strings.h"
 
 #define AES_BLOCK_SIZE 16
@@ -213,22 +213,22 @@ void test_cipher_hello(void)
 
 void test_buffers(void) 
 {
-	struct venc_buffer *buf;
-	struct venc_buffers* bufs;
-	bufs = venc_alloc_buffers(2);
-	if (!bufs) {
+	struct venc_block *buf;
+	struct venc_blocks* blocks;
+	blocks = venc_alloc_blocks(2);
+	if (!blocks) {
 		pr_err("Failed to allocate buffers\n");
 		return;
 	}
 	
-	buf = venc_first_free_or_null(bufs);
-	venc_move_to_used(bufs, buf);
-	buf = venc_first_free_or_null(bufs);
-	buf = venc_first_used_or_null(bufs);
-	venc_move_to_free(bufs, buf);
-	buf = venc_first_free_or_null(bufs);
-	buf = venc_first_used_or_null(bufs);	
-	venc_free_buffers(bufs);
+	buf = venc_first_free_or_null(blocks);
+	venc_move_to_used(blocks, buf);
+	buf = venc_first_free_or_null(blocks);
+	buf = venc_first_used_or_null(blocks);
+	venc_move_to_free(blocks, buf);
+	buf = venc_first_free_or_null(blocks);
+	buf = venc_first_used_or_null(blocks);	
+	venc_free_blocks(blocks);
 	pr_info("%s Test completed\n", __func__);
 
 }

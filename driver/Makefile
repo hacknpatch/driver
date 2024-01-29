@@ -1,8 +1,8 @@
 obj-m += vencrypt.o
-vencrypt-objs := vencrypt-module.o vencrypt-strings.o vencrypt-crypto.o vencrypt-buffers.o
+vencrypt-objs := vencrypt-module.o vencrypt-strings.o vencrypt-crypto.o vencrypt-blocks.o
 
 obj-m += tests.o
-tests-objs := tests-module.o vencrypt-strings.o vencrypt-crypto.o vencrypt-buffers.o
+tests-objs := tests-module.o vencrypt-strings.o vencrypt-crypto.o vencrypt-blocks.o
 
 # modules_install = /lib/module/<kernel_release>/extra/
 all:

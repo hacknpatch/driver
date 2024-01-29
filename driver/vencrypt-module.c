@@ -2,7 +2,7 @@
 #include <linux/cdev.h>
 
 #include "vencrypt-strings.h"
-#include "vencrypt-buffers.h"
+#include "vencrypt-blocks.h"
 #include "vencrypt-crypto.h"
 
 #define DRIVER_NAME "vencrypt"
@@ -17,71 +17,71 @@ static char *mod_param_key;
 module_param_named(key, mod_param_key, charp, S_IRUGO);
 
 static int mod_param_num_buffers = 10;
-module_param_named(bufs, mod_param_num_buffers, int, S_IRUGO);
+module_param_named(blocks, mod_param_num_buffers, int, S_IRUGO);
 
 struct vencrypt_ctx {
 	struct cdev cdev;
 	struct venc_cipher cipher;
-	struct venc_buffers *bufs;
+	struct venc_blocks *blocks;
 	unsigned long open_flags;
 };
 
-static int encode_buf(struct venc_cipher *cipher, struct venc_buffer *buf)
+static int encode_block(struct venc_cipher *cipher, struct venc_block *block)
 {
 	int err;
 
-	if (buf->size == 0)
+	if (block->size == 0)
 		return 0;
 
 	if (mod_param_encrypt)
-		err = venc_encrypt(cipher, buf->data, buf->size);
+		err = venc_encrypt(cipher, block->data, block->size);
 	else
-		err = venc_decrypt(cipher, buf->data, buf->size);
+		err = venc_decrypt(cipher, block->data, block->size);
 
 	if (err)
-		pr_err("%s: encode_buf failed: %d\n", DRIVER_NAME, err);
+		pr_err("%s: encode_block failed: %d\n", DRIVER_NAME, err);
 
 	return err;
 }
 
 static int last_block_encrypt_pkcs7(struct vencrypt_ctx *ctx)
 {
-	struct venc_buffer *buf;
+	struct venc_block *block;
 	int err;
 	/*
 	 * check to see if we have an uncomplete buffer from _write, if 
 	 * so pad and encrypt it.
 	 */
-	buf = venc_first_free_or_null(ctx->bufs);
-	if (buf == NULL || buf->size == AES_BLOCK_SIZE) {
-		err = venc_wait_for_free(ctx->bufs, &buf);
+	block = venc_first_free_or_null(ctx->blocks);
+	if (block == NULL || block->size == AES_BLOCK_SIZE) {
+		err = venc_wait_for_free(ctx->blocks, &block);
 		if (err) {
-			pr_err("%s: wait for free buf failed with %d\n",
+			pr_err("%s: wait for free block failed with %d\n",
 			       DRIVER_NAME, err);
 			return err;
 		}
-		memset(buf->data, 0, AES_BLOCK_SIZE);
-		buf->size = 0;
+		memset(block->data, 0, AES_BLOCK_SIZE);
+		block->size = 0;
 	}
 
-	pkcs7_pad_block(buf->data, buf->size, AES_BLOCK_SIZE);
-	buf->size = AES_BLOCK_SIZE;
+	pkcs7_pad_block(block->data, block->size, AES_BLOCK_SIZE);
+	block->size = AES_BLOCK_SIZE;
 
-	venc_encrypt(&ctx->cipher, buf->data, buf->size);
-	venc_move_to_used(ctx->bufs, buf);
+	venc_encrypt(&ctx->cipher, block->data, block->size);
+	venc_move_to_used(ctx->blocks, block);
 	return 0;
 }
 
 static void last_block_decrypt_pkcs7(struct vencrypt_ctx *ctx)
 {
-	struct venc_buffer *buf;
+	struct venc_block *block;
 	/* 
 	 * we keep the last block in the used list, so we can
 	 * workout its padding length. Then allow it to be sent.
 	 */
-	buf = venc_last_used_or_null(ctx->bufs);
-	if (buf != NULL)
-		buf->size = pkcs7_block_len(buf->data, buf->size);
+	block = venc_last_used_or_null(ctx->blocks);
+	if (block != NULL)
+		block->size = pkcs7_block_len(block->data, block->size);
 	else
 		pr_err("%s: no last block for pkcs7 size out maybe be wrong!\n",
 		       DRIVER_NAME);
@@ -115,10 +115,10 @@ static int venc_open(struct inode *inode, struct file *file)
 		 * if drain is set, it means a reader is still reading, so we
 		 * need to wait for it to finish.
 		 */
-		err = venc_wait_for_drain(ctx->bufs, false);
+		err = venc_wait_for_drain(ctx->blocks, false);
 		/* 
 		 * writer does encryption, so this is safe to clear IV. The 
-		 * unread bufs in used queue will be in the drian state until the
+		 * unread blocks in used queue will be in the drian state until the
 		 * reader closes.
 		 */
 		if (!err)
@@ -149,14 +149,14 @@ static int venc_release(struct inode *inode, struct file *file)
 		 * drain the out buffers, then fops read will return 0 until 
 		 * next reader closes / releases.
 		 */
-		venc_set_drain(ctx->bufs, true);
+		venc_set_drain(ctx->blocks, true);
 
 	} else if (minor == READ_MINOR) {
 		/*
 		 * TODO: consider what to do if read exists but there is still
 		 * data in the used list?
 		 */
-		venc_set_drain(ctx->bufs, false);
+		venc_set_drain(ctx->blocks, false);
 	}
 
 	smp_mb__before_atomic();
@@ -170,7 +170,7 @@ static ssize_t venc_read(struct file *file, char __user *user_buf, size_t count,
 	int err;
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
-	struct venc_buffer *buf;
+	struct venc_block *block;
 	size_t to_copy;
 	bool drain;
 
@@ -181,25 +181,25 @@ static ssize_t venc_read(struct file *file, char __user *user_buf, size_t count,
 
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
-	err = venc_wait_for_used(ctx->bufs, &buf, &drain);
+	err = venc_wait_for_used(ctx->blocks, &block, &drain);
 	if (err)
 		return err;
 
-	if (buf == NULL)
+	if (block == NULL)
 		return drain ? 0 : -EIO;
 
-	if (buf->size == 0)
+	if (block->size == 0)
 		return 0;
 
-	to_copy = min(buf->size, count);
+	to_copy = min(block->size, count);
 
-	if (copy_to_user(user_buf, buf->data, to_copy))
+	if (copy_to_user(user_buf, block->data, to_copy))
 		return -EFAULT;
 
-	buf->size -= to_copy;
+	block->size -= to_copy;
 
-	if (buf->size == 0)
-		venc_move_to_free(ctx->bufs, buf);
+	if (block->size == 0)
+		venc_move_to_free(ctx->blocks, block);
 
 	return to_copy;
 }
@@ -210,7 +210,7 @@ static ssize_t venc_write(struct file *file, const char __user *user_buf,
 	int err;
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
-	struct venc_buffer *buf;
+	struct venc_block *block;
 	size_t free, copied;
 
 	minor = iminor(file_inode(file));
@@ -220,21 +220,21 @@ static ssize_t venc_write(struct file *file, const char __user *user_buf,
 
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
-	err = venc_wait_for_free(ctx->bufs, &buf);
+	err = venc_wait_for_free(ctx->blocks, &block);
 	if (err)
 		return err;
 
-	copied = min(AES_BLOCK_SIZE - buf->size, count);
+	copied = min(AES_BLOCK_SIZE - block->size, count);
 
-	if (copy_from_user(&buf->data[buf->size], user_buf, copied))
+	if (copy_from_user(&block->data[block->size], user_buf, copied))
 		return -EFAULT;
 
-	buf->size += copied;
+	block->size += copied;
 
-	free = AES_BLOCK_SIZE - buf->size;
+	free = AES_BLOCK_SIZE - block->size;
 	if (free == 0) {
-		encode_buf(&ctx->cipher, buf);
-		venc_move_to_used(ctx->bufs, buf);
+		encode_block(&ctx->cipher, block);
+		venc_move_to_used(ctx->blocks, block);
 	}
 
 	return copied;
@@ -264,7 +264,7 @@ static int __init venc_init(void)
 	 * this should work with a single buffer, but I haven't tested it.	 
 	 */
 	if (mod_param_num_buffers < 3 || mod_param_num_buffers > 1000) {
-		pr_err("%s: Module param invalid bufs=%d choices: 3-1000\n",
+		pr_err("%s: Module param invalid blocks=%d choices: 3-1000\n",
 		       DRIVER_NAME, mod_param_num_buffers);
 		return -EINVAL;
 	}
@@ -313,8 +313,8 @@ static int __init venc_init(void)
 		goto err_free_data;
 	}
 
-	driver_ctx->bufs = venc_alloc_buffers(mod_param_num_buffers);
-	if (!driver_ctx->bufs) {
+	driver_ctx->blocks = venc_alloc_blocks(mod_param_num_buffers);
+	if (!driver_ctx->blocks) {
 		err = -ENOMEM;
 		goto err_free_cipher;
 	}
@@ -328,7 +328,7 @@ static int __init venc_init(void)
 			    mod_param_encrypt == 0 ? "pt" : "ct");
 	if (IS_ERR(dev)) {
 		err = PTR_ERR(dev);
-		goto err_free_buffers;
+		goto err_free_blocks;
 	}
 
 	dev = device_create(driver_device_class, NULL,
@@ -339,18 +339,18 @@ static int __init venc_init(void)
 		err = PTR_ERR(dev);
 		device_destroy(driver_device_class,
 			       MKDEV(driver_major, READ_MINOR));
-		goto err_free_buffers;
+		goto err_free_blocks;
 	}
 
 	err = cdev_add(&driver_ctx->cdev, driver_dev, CHAR_DEVICES);
 	if (err)
-		goto err_free_buffers;
+		goto err_free_blocks;
 
 	pr_info("%s: Initialized\n", DRIVER_NAME);
 	return 0;
 
-err_free_buffers:
-	venc_free_buffers(driver_ctx->bufs);
+err_free_blocks:
+	venc_free_blocks(driver_ctx->blocks);
 
 err_free_cipher:
 	venc_free_cipher(&driver_ctx->cipher);
@@ -374,7 +374,7 @@ static void __exit venc_exit(void)
 	class_destroy(driver_device_class);
 	unregister_chrdev_region(driver_dev, CHAR_DEVICES);
 	venc_free_cipher(&driver_ctx->cipher);
-	venc_free_buffers(driver_ctx->bufs);
+	venc_free_blocks(driver_ctx->blocks);
 	kfree(driver_ctx);
 	pr_info("%s: Exited\n", DRIVER_NAME);
 }
