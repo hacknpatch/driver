@@ -3,7 +3,6 @@
 
 #include "vencrypt-strings.h"
 
-
 static int char_to_nibble(char c)
 {
 	if ('0' <= c && c <= '9')

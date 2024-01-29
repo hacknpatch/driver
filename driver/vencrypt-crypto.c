@@ -3,7 +3,6 @@
 
 #include "vencrypt-crypto.h"
 
-
 /*
  * 
  * name         : cbc(aes)
@@ -23,7 +22,6 @@
  * walksize     : 16
  */
 
-
 void venc_free_cipher(struct venc_cipher *cipher)
 {
 	if (cipher->req)
@@ -32,21 +30,21 @@ void venc_free_cipher(struct venc_cipher *cipher)
 		crypto_free_skcipher(cipher->tfm);
 }
 
-int venc_init_cipher(struct venc_cipher *cipher,
-			 const u8 *key, unsigned int keylen)
+int venc_init_cipher(struct venc_cipher *cipher, const u8 *key,
+		     unsigned int keylen)
 {
 	int ret;
 
 	cipher->tfm = crypto_alloc_skcipher("cbc(aes)", 0, 0);
 	if (IS_ERR(cipher->tfm)) {
-		pr_err("Error allocating cipher handle: %ld\n",
+		pr_err("%s Error allocating cipher handle: %ld\n", __func__,
 		       PTR_ERR(cipher->tfm));
 		return PTR_ERR(cipher->tfm);
 	}
 
 	cipher->req = skcipher_request_alloc(cipher->tfm, GFP_KERNEL);
 	if (!cipher->req) {
-		pr_err("Failed to allocate skcipher request\n");
+		pr_err("%s Failed to allocate skcipher request\n", __func__);
 		crypto_free_skcipher(cipher->tfm);
 		return -ENOMEM;
 	}
@@ -58,7 +56,7 @@ int venc_init_cipher(struct venc_cipher *cipher,
 	memcpy(cipher->key, key, keylen);
 	ret = crypto_skcipher_setkey(cipher->tfm, cipher->key, keylen);
 	if (ret) {
-		pr_err("crypto_skcipher_setkey: %d\n", ret);
+		pr_err("%s crypto_skcipher_setkey: %d\n", __func__, ret);
 		venc_free_cipher(cipher);
 		return ret;
 	}
@@ -73,25 +71,29 @@ void venc_zero_cipher_iv(struct venc_cipher *cipher)
 
 void venc_random_cipher_iv(struct venc_cipher *cipher)
 {
-	get_random_bytes(cipher->iv, sizeof(cipher->iv)); 
+	get_random_bytes(cipher->iv, sizeof(cipher->iv));
 }
 
-int venc_encrypt(struct venc_cipher *cipher, u8 *block, const size_t block_length)
+int venc_encrypt(struct venc_cipher *cipher, u8 *block,
+		 const size_t block_length)
 {
 	int ret;
 
 	sg_init_one(&cipher->sg, block, block_length);
 
-	skcipher_request_set_callback(
-		cipher->req, CRYPTO_TFM_REQ_MAY_BACKLOG | CRYPTO_TFM_REQ_MAY_SLEEP,
-		crypto_req_done, &cipher->wait);
+	skcipher_request_set_callback(cipher->req,
+				      CRYPTO_TFM_REQ_MAY_BACKLOG |
+					      CRYPTO_TFM_REQ_MAY_SLEEP,
+				      crypto_req_done, &cipher->wait);
 
-	skcipher_request_set_crypt(cipher->req, &cipher->sg, &cipher->sg, block_length,
-				   cipher->iv);
+	skcipher_request_set_crypt(cipher->req, &cipher->sg, &cipher->sg,
+				   block_length, cipher->iv);
 
-	ret = crypto_wait_req(crypto_skcipher_encrypt(cipher->req), &cipher->wait);
+	ret = crypto_wait_req(crypto_skcipher_encrypt(cipher->req),
+			      &cipher->wait);
 	if (ret) {
-		pr_err("encrypt_block/crypto_wait_req failed: %d\n", ret);
+		pr_err("%s encrypt_block/crypto_wait_req failed: %d\n",
+		       __func__, ret);
 		return ret;
 	}
 
@@ -102,27 +104,31 @@ int venc_encrypt(struct venc_cipher *cipher, u8 *block, const size_t block_lengt
 	return 0;
 }
 
-int venc_decrypt(struct venc_cipher *cipher, u8 *block, const size_t block_length)
+int venc_decrypt(struct venc_cipher *cipher, u8 *block,
+		 const size_t block_length)
 {
 	int ret;
 	u8 next_iv[16];
 
 	sg_init_one(&cipher->sg, block, block_length);
 
-	skcipher_request_set_callback(
-		cipher->req, CRYPTO_TFM_REQ_MAY_BACKLOG | CRYPTO_TFM_REQ_MAY_SLEEP,
-		crypto_req_done, &cipher->wait);
+	skcipher_request_set_callback(cipher->req,
+				      CRYPTO_TFM_REQ_MAY_BACKLOG |
+					      CRYPTO_TFM_REQ_MAY_SLEEP,
+				      crypto_req_done, &cipher->wait);
 
-	skcipher_request_set_crypt(cipher->req, &cipher->sg, &cipher->sg, block_length,
-				   cipher->iv);
+	skcipher_request_set_crypt(cipher->req, &cipher->sg, &cipher->sg,
+				   block_length, cipher->iv);
 
 	memcpy(next_iv, block, 16);
 	/*
 	 * TODO: consider if I need to handle -EINPROGRESS, -EBUSY, -EAGAIN
 	 */
-	ret = crypto_wait_req(crypto_skcipher_decrypt(cipher->req), &cipher->wait);
+	ret = crypto_wait_req(crypto_skcipher_decrypt(cipher->req),
+			      &cipher->wait);
 	if (ret) {
-		pr_err("venc_decrypt/crypto_wait_req failed: %d\n", ret);
+		pr_err("%s venc_decrypt/crypto_wait_req failed: %d\n", __func__,
+		       ret);
 		return ret;
 	}
 

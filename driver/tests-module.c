@@ -16,9 +16,11 @@
 
 #include "vencrypt-crypto.h"
 #include "vencrypt-buffers.h"
+#include "vencrypt-strings.h"
 
 #define AES_BLOCK_SIZE 16
 #define MODULE_NAME "tests"
+#define TEST_KEY "C0FFEE0C0DE0C0FFEE0C0DE00FEED0BEEF0BED"
 
 void test_cipher_with_two_blocks(void)
 {
@@ -31,6 +33,11 @@ void test_cipher_with_two_blocks(void)
 	u8 encrypted_data1[16], encrypted_data2[16];
 	u8 decrypted_data1[16], decrypted_data2[16];
 	u8 original_iv[16];
+
+	if (hex_to_bytes(key, TEST_KEY, 32)) {
+		pr_err("Failed to convert key to bytes\n");
+		return;
+	}
 
 	// Initialize context for encryption with key
 	ret = venc_init_cipher(&ctx, key, keylen);
@@ -157,6 +164,11 @@ void test_cipher_hello(void)
 	u8 decrypted_data1[16];
 	u8 original_iv[16];
 
+	if (hex_to_bytes(key, TEST_KEY, 32)) {
+		pr_err("Failed to convert key to bytes\n");
+		return;
+	}
+
 	// Initialize context for encryption with key
 	ret = venc_init_cipher(&ctx, key, keylen);
 	if (ret) {
@@ -214,44 +226,22 @@ void test_buffers(void)
 	struct venc_buffer *buf;
 	struct venc_buffers bufs;
 	
-	pr_info("%s: enter play\n", MODULE_NAME);
-
 	venc_init_buffers(&bufs);	
-
 	buf = venc_first_free_or_null(&bufs);
-	pr_info("%s: first free: %p\n", MODULE_NAME, buf);
-
-	pr_info("%s: 1\n", MODULE_NAME);
 	venc_move_to_used(&bufs, buf);
-	
-	pr_info("%s: 2\n", MODULE_NAME);
 	buf = venc_first_free_or_null(&bufs);
-
-	pr_info("%s: 3\n", MODULE_NAME);
 	buf = venc_first_used_or_null(&bufs);
-	pr_info("%s: first used: %p\n", MODULE_NAME, buf);
-
-	pr_info("%s: 4\n", MODULE_NAME);
 	venc_move_to_free(&bufs, buf);
-
-	pr_info("%s: 5\n", MODULE_NAME);
 	buf = venc_first_free_or_null(&bufs);
-	pr_info("%s: first free: %p\n", MODULE_NAME, buf);
-	
-	pr_info("%s: 6\n", MODULE_NAME);
 	buf = venc_first_used_or_null(&bufs);	
-	pr_info("%s: first used: %p\n", MODULE_NAME, buf);
-
-	pr_info("%s: return play\n", MODULE_NAME);
 }
 
 static int __init my_module_init(void)
 {
 	test_buffers();
-	// list_play();
-	// test_cipher_hello();
-	// test_cipher_with_two_blocks();
-	// test_pkcs7_padding();
+	test_cipher_hello();
+	test_cipher_with_two_blocks();
+	test_pkcs7_padding();
 	return 0;
 }
 

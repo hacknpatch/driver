@@ -15,37 +15,32 @@ TODOs:
 ```shell
 cd ./driver
 make
+../mod_install.sh 1
 ```
 
-some scripts for installing / removing the module.
+# usage:
+
+encrypt
 ```shell
-./mod_install.sh
-./mod_remove.sh
+../mod_install.sh 1
+echo "hello" > /dev/vencrypt_pt
+cat /dev/vencrypt_ct | base64
+$ WasyktyxbiO5e0zq2dDDwA==
 ```
 
-``` shell
-cat /dev/vencrypt_read | base64
-echo "this is my string" > /dev/vencrypt_write
-```
-
-for testing I currently 
+decrypt
 ```shell
-cat /dev/vencrypt_read
-echo "this is my string" > /dev/vencrypt_write
+../mod_install.sh 0
+echo "WasyktyxbiO5e0zq2dDDwA==" | base64 -d > /dev/vencrypt_ct
+cat /dev/vencrypt_pt
+$ hello
 ```
-
-I will change the to using `/dev/vencrypt_pt` and `/dev/vencrypt_ct` by change 
-that names in the module init by reading the module param `encrypt`. 
-I.e. something like:
-```c
-device_create(..., cypher_encrypt ? "/dev/vencrypt_pt" : "/dev/vencrypt_ct")
-```
-
 
 ## linux kernel formating 
 I'm using clang-format to fomat my code.
 ```shell
-clang-format -style=file:clang-format.txt -i ./driver/vencrypt.c
+cd ./drive
+find . -type f -name 'venc*.[ch]' -exec clang-format -style=file:../clang-fmt.txt -i {} \;
 ```
 The format file I used is https://github.com/torvalds/linux/blob/master/.clang-format
 

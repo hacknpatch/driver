@@ -34,13 +34,14 @@ static int encode_buf(struct venc_cipher *cipher, struct venc_buffer *buf)
 	 */
 	if (mod_param_encrypt == 2)
 		return 0;
-	
+
 	if (mod_param_encrypt) {
-		if (buf->size != sizeof(buf->size)) {
-			pkcs7_pad_block(buf->data, buf->size , sizeof(buf->size));
-			buf->size = sizeof(buf->size);
+		if (buf->size != sizeof(buf->data)) {
+			pkcs7_pad_block(buf->data, buf->size,
+					sizeof(buf->data));
+			buf->size = sizeof(buf->data);
 		}
-		err = venc_encrypt(cipher, buf->data, sizeof(buf->size));
+		err = venc_encrypt(cipher, buf->data, buf->size);
 	} else {
 		err = venc_decrypt(cipher, buf->data, buf->size);
 		buf->size = pkcs7_block_len(buf->data, buf->size);
@@ -76,7 +77,7 @@ static int vencrypt_open(struct inode *inode, struct file *file)
 	* Writer does encryption, so this is safe to clear IV. The unread bufs
 	* in used queue will be in the drian state until the reader closes.
 	*/
-	if (minor == WRITE_MINOR)		
+	if (minor == WRITE_MINOR)
 		venc_zero_cipher_iv(&ctx->cipher);
 
 	return 0;
@@ -91,42 +92,42 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 	minor = iminor(inode);
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
 
-	if (minor == WRITE_MINOR) {		
+	if (minor == WRITE_MINOR) {
 		buf = venc_first_free_or_null(&ctx->bufs);
 		/*
 		 * check to see if we have an uncomplete buffer from _write, if 
 		 * so pad and encrypt it.
-		 */		
-		if (buf != NULL && buf->size ) {
+		 */
+		if (buf != NULL && buf->size) {
 			encode_buf(&ctx->cipher, buf);
 			venc_move_to_used(&ctx->bufs, buf);
 		}
 
 		/* 
 		 * drain the out buffers, then fops read will return 0 until 
-		 * next reader closes / realease
+		 * next reader closes / releases.
 		 */
 		venc_drain(&ctx->bufs);
 
-	} else if (minor == READ_MINOR) {		
+	} else if (minor == READ_MINOR) {
 		/*
 		 * TODO: consider what to do if read exists but there is still
 		 * data in the used list?
 		 */
 		venc_clear_drain(&ctx->bufs);
 	}
-	
+
 	smp_mb__before_atomic();
 	clear_bit_unlock(minor, &ctx->open_flags);
 	return 0;
 }
 
-static ssize_t vencrypt_read(struct file *file, char __user *user_buf, size_t count,
-			     loff_t *offset)
-{	
+static ssize_t vencrypt_read(struct file *file, char __user *user_buf,
+			     size_t count, loff_t *offset)
+{
 	int err;
 	uint8_t minor;
-	struct vencrypt_ctx *ctx;	
+	struct vencrypt_ctx *ctx;
 	struct venc_buffer *buf;
 	size_t to_copy;
 
@@ -141,14 +142,13 @@ static ssize_t vencrypt_read(struct file *file, char __user *user_buf, size_t co
 	if (err)
 		return err;
 
-	
 	if (buf == NULL) {
 		if (ctx->bufs.drain)
 			return 0;
 		else
 			return -EIO;
 	}
-	
+
 	if (buf->size == 0)
 		return 0;
 
@@ -156,9 +156,9 @@ static ssize_t vencrypt_read(struct file *file, char __user *user_buf, size_t co
 
 	if (copy_to_user(user_buf, buf->data, to_copy))
 		return -EFAULT;
-	
+
 	buf->size -= to_copy;
-	
+
 	if (buf->size == 0)
 		venc_move_to_free(&ctx->bufs, buf);
 
@@ -172,7 +172,7 @@ static ssize_t vencrypt_write(struct file *file, const char __user *user_buf,
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
 	struct venc_buffer *buf;
-	size_t available, copied;
+	size_t free, copied;
 
 	minor = iminor(file_inode(file));
 
@@ -180,20 +180,20 @@ static ssize_t vencrypt_write(struct file *file, const char __user *user_buf,
 		return -EPERM;
 
 	ctx = container_of(file->private_data, struct vencrypt_ctx, cdev);
-	
-	err =  venc_wait_for_free(&ctx->bufs, &buf);
+
+	err = venc_wait_for_free(&ctx->bufs, &buf);
 	if (err)
 		return err;
 
 	copied = min(sizeof(buf->data) - buf->size, count);
-	
+
 	if (copy_from_user(&buf->data[buf->size], user_buf, copied))
 		return -EFAULT;
-	
+
 	buf->size += copied;
 
-	available = sizeof(buf->data) - buf->size;	
-	if (available == 0) {
+	free = sizeof(buf->data) - buf->size;
+	if (free == 0) {
 		encode_buf(&ctx->cipher, buf);
 		venc_move_to_used(&ctx->bufs, buf);
 	}
@@ -201,43 +201,39 @@ static ssize_t vencrypt_write(struct file *file, const char __user *user_buf,
 	return copied;
 }
 
-static const char* get_dev_read_prefix(void)
+static const char *get_dev_read_prefix(void)
 {
-	switch (mod_param_encrypt)
-	{
-		case 0:
-			return "pt";
-		case 1:		
-			return "ct";
-		case 2:
-			return "read";
+	switch (mod_param_encrypt) {
+	case 0:
+		return "pt";
+	case 1:
+		return "ct";
+	case 2:
+		return "read";
 	}
 	return "invalid_r";
 }
 
-static const char* get_dev_write_prefix(void)
+static const char *get_dev_write_prefix(void)
 {
-	switch (mod_param_encrypt)
-	{
-		case 0:
-			return "ct";
-		case 1:		
-			return "pt";
-		case 2:
-			return "write";
-				
+	switch (mod_param_encrypt) {
+	case 0:
+		return "ct";
+	case 1:
+		return "pt";
+	case 2:
+		return "write";
 	}
 	return "invalid_w";
 }
 
 static const struct file_operations vencrypt_fops = {
-	.owner		= THIS_MODULE,
-	.open		= vencrypt_open,
-	.read		= vencrypt_read,
-	.write		= vencrypt_write,
-	.release	= vencrypt_release,
+	.owner = THIS_MODULE,
+	.open = vencrypt_open,
+	.read = vencrypt_read,
+	.write = vencrypt_write,
+	.release = vencrypt_release,
 };
-
 
 static int driver_major;
 static struct class *driver_device_class;
@@ -248,20 +244,20 @@ static int __init vencrypt_init(void)
 {
 	int err;
 	struct device *dev;
-	u8 key[32] = {0};
+	u8 key[32] = { 0 };
 	int key_len;
 
-	if (mod_param_encrypt < 0 || mod_param_encrypt > 2)
-	{
-		pr_err("%s: Invalid crypter encrypt=%d choices: 0=decrypt, 1=encrypt, 2=no-encryption\n", 
+	if (mod_param_encrypt < 0 || mod_param_encrypt > 2) {
+		pr_err("%s: Invalid crypter encrypt=%d choices: 0=decrypt, 1=encrypt, 2=no-encryption\n",
 		       DRIVER_NAME, mod_param_encrypt);
 		return -EINVAL;
 	}
 
 	key_len = strlen(mod_param_key) / 2;
 	if (key_len < CBC_AES_MIN_KEY_SIZE || key_len > CBC_AES_MAX_KEY_SIZE) {
-		pr_err("%s: Invalid crypter key length %d it must between %d and %d\n", 
-		       DRIVER_NAME, key_len, CBC_AES_MIN_KEY_SIZE, CBC_AES_MAX_KEY_SIZE);
+		pr_err("%s: Invalid crypter key length %d it must between %d and %d\n",
+		       DRIVER_NAME, key_len, CBC_AES_MIN_KEY_SIZE,
+		       CBC_AES_MAX_KEY_SIZE);
 		return -EINVAL;
 	}
 
@@ -282,9 +278,9 @@ static int __init vencrypt_init(void)
 		err = -ENOMEM;
 		goto err_destroy_class;
 	}
-	
+
 	err = hex_to_bytes(key, mod_param_key, key_len);
-	if (err) {		
+	if (err) {
 		pr_err("%s: Crypter key is invalid hex\n", DRIVER_NAME);
 		goto err_free_data;
 	}
@@ -293,8 +289,8 @@ static int __init vencrypt_init(void)
 	if (err) {
 		pr_err("%s: Crypter setup failed err %d\n", DRIVER_NAME, err);
 		goto err_free_data;
-	}	
-	
+	}
+
 	venc_init_buffers(&driver_ctx->bufs);
 
 	cdev_init(&driver_ctx->cdev, &vencrypt_fops);
@@ -335,7 +331,7 @@ err_destroy_class:
 	class_destroy(driver_device_class);
 
 err_unregister_chrdev:
-	unregister_chrdev_region(driver_dev, CHAR_DEVICES);	
+	unregister_chrdev_region(driver_dev, CHAR_DEVICES);
 	return err;
 }
 
