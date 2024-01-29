@@ -241,8 +241,6 @@ static const char *dev_read_prefix(void)
 		return "pt";
 	case 1:
 		return "ct";
-	case 2:
-		return "read";
 	}
 	return "invalid_r";
 }
@@ -254,8 +252,6 @@ static const char *dev_write_prefix(void)
 		return "ct";
 	case 1:
 		return "pt";
-	case 2:
-		return "write";
 	}
 	return "invalid_w";
 }
@@ -280,8 +276,8 @@ static int __init venc_init(void)
 	u8 key[32] = { 0 };
 	int key_len;
 
-	if (mod_param_encrypt < 0 || mod_param_encrypt > 2) {
-		pr_err("%s: Invalid crypter encrypt=%d choices: 0=decrypt, 1=encrypt, 2=no-encryption\n",
+	if (mod_param_encrypt < 0 || mod_param_encrypt > 1) {
+		pr_err("%s: Invalid crypter encrypt=%d choices: 0=decrypt, 1=encrypt\n",
 		       DRIVER_NAME, mod_param_encrypt);
 		return -EINVAL;
 	}
@@ -351,7 +347,7 @@ static int __init venc_init(void)
 		goto err_free_buffers;
 	}
 
-	err = cdev_add(&driver_ctx->cdev, driver_dev, 2);
+	err = cdev_add(&driver_ctx->cdev, driver_dev, CHAR_DEVICES);
 	if (err)
 		goto err_free_buffers;
 
