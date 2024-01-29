@@ -318,10 +318,6 @@ static int __init vencrypt_init(void)
 	cdev_init(&driver_ctx->cdev, &vencrypt_fops);
 	driver_ctx->cdev.owner = THIS_MODULE;
 
-	err = cdev_add(&driver_ctx->cdev, driver_dev, 2);
-	if (err)
-		goto err_free_cipher;
-
 	dev = device_create(driver_device_class, NULL,
 			    MKDEV(driver_major, READ_MINOR), driver_ctx,
 			    "%s_%s", DRIVER_NAME, get_dev_read_prefix());
@@ -339,6 +335,10 @@ static int __init vencrypt_init(void)
 			       MKDEV(driver_major, READ_MINOR));
 		goto err_free_cipher;
 	}
+
+	err = cdev_add(&driver_ctx->cdev, driver_dev, 2);
+	if (err)
+		goto err_free_cipher;
 
 	pr_info("%s: Initialized\n", DRIVER_NAME);
 	return 0;
