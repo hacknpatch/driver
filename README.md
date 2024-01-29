@@ -2,8 +2,8 @@
 I have only tested this driver in ubuntu 22.04 - 64bit x86 so far with the kernel
 `6.5.0-14-generic`. I would like to cross-compile for 32bit arm and test
 with qemu via github actions if I had time [https://github.com/hacknpatch/driver/issues/5]
- 
-## build 
+
+## build
 
 ```shell
 cd ./driver
@@ -11,8 +11,29 @@ make
 ../mod_install.sh 1
 ```
 
-# usage:
+## usage:
 
+The driver implements AES/CBC/PKCS#7 encryption. This means data is encrypted in blocks of 16 bytes, and the last block 
+is always padded using the PKCS#7 method.
+
+The encrypted data format is represented as: `[block[1] block[2] block[3] ... padded_PKCS7_block[N-1]]`.
+
+IMPORTANT: When writing to the driver, if the buffers become full, writing will block until some data is read from the 
+driver.
+
+IMPORTANT: After closing writing to `/dev/vencrypt_[pt|ct]`, you must fully read/drain `/dev/vencrypt_[ct|pt]` until you 
+receive ZERO/EOF from read(). Until this is done, opening `/dev/vencrypt_[pt|ct]` for writing will be blocked until the 
+reader has fully drained the buffers. This ensures the correct application of PKCS#7 padding.
+
+### encryption mode
+Load the module with the parameter encrypt=1 to output encrypted data at /dev/vencrypt_ct. If the data written to 
+`/dev/vencrypt_ct` is a multiple of 16 bytes (e.g., 16, 32, etc.), then an additional fully padded block is added.
+
+### decryption mode
+Set the module parameter to encrypt=0 to input encrypted data at `/dev/vencrypt_ct` and read decrypted data from 
+`/dev/vencrypt_pt`.
+
+### quick example
 encrypt
 ```shell
 ../mod_install.sh 1
@@ -29,15 +50,17 @@ cat /dev/vencrypt_pt
 $ hello
 ```
 
-## linux kernel formating 
-I'm using clang-format to fomat my code.
+
+## linux kernel formatting
+I'm using clang-format to format my code.
 ```shell
 cd ./drive
 find . -type f -name 'venc*.[ch]' -exec clang-format -style=file:../clang-fmt.txt -i {} \;
 ```
-The format file I used is https://github.com/torvalds/linux/blob/master/.clang-format
+The format file I use is https://github.com/torvalds/linux/blob/master/.clang-format
 
 ## machine environment
+
 my current environment is:
 ```shell
 uname -a

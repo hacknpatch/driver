@@ -358,7 +358,8 @@ static int __init venc_init(void)
 	if (err)
 		goto err_free_blocks;
 
-	pr_info("%s: Initialized\n", DRIVER_NAME);
+	pr_info("%s: Initialized with encrypt=%d blocks=%d\n", 
+		DRIVER_NAME, mod_param_encrypt, mod_param_num_blocks);
 	return 0;
 
 err_free_blocks:
