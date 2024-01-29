@@ -76,11 +76,56 @@ static int vencrypt_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static int last_block_encrypt_pkcs7(struct vencrypt_ctx *ctx) 
+{
+	struct venc_buffer *buf;
+	int err;
+	/*
+	 * check to see if we have an uncomplete buffer from _write, if 
+	 * so pad and encrypt it.
+	 */
+	buf = venc_first_free_or_null(&ctx->bufs);
+	if (buf == NULL || buf->size == AES_BLOCK_SIZE) {
+		pr_info("%s: padding getting out buff\n", DRIVER_NAME);
+		err = venc_wait_for_free(&ctx->bufs, &buf);
+		if (err) {
+			pr_err("%s: wait for free buf failed with %d\n",
+			DRIVER_NAME, err);
+			return err;
+		}
+		memset(buf->data, 0, sizeof(buf->data));
+		buf->size = 0;
+		pr_info("%s: padding last block\n", DRIVER_NAME);
+	}
+	
+	pkcs7_pad_block(buf->data, buf->size, sizeof(buf->data));
+	buf->size = AES_BLOCK_SIZE;
+	venc_encrypt(&ctx->cipher, buf->data, buf->size);
+	venc_move_to_used(&ctx->bufs, buf);
+	return 0;
+}
+
+static void last_block_decrypt_pkcs7(struct vencrypt_ctx *ctx) 
+{
+	struct venc_buffer *buf;
+	/* 
+	 * we keep the last block in the used list, so we can
+	 * workout its padding length. Then allow it to be sent.
+	 */
+	buf = venc_last_used_or_null(&ctx->bufs);
+	if (buf != NULL) {				
+		buf->size = pkcs7_block_len(buf->data, buf->size);
+		pr_info("%s: decrypted size %zu\n", DRIVER_NAME, buf->size);
+	} else {
+		pr_err("%s: no last block\n", DRIVER_NAME);
+	}
+}
+
 static int vencrypt_release(struct inode *inode, struct file *file)
 {
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
-	struct venc_buffer *buf;
+	
 	int err;
 
 	minor = iminor(inode);
@@ -88,42 +133,12 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 
 	err = 0;
 	if (minor == WRITE_MINOR) {
+
+		if (mod_param_encrypt) 
+			err = last_block_encrypt_pkcs7(ctx);
+		else
+			last_block_decrypt_pkcs7(ctx);
 		
-		/*
-		 * check to see if we have an uncomplete buffer from _write, if 
-		 * so pad and encrypt it.
-		 */
-		if (mod_param_encrypt) {
-			buf = venc_first_free_or_null(&ctx->bufs);
-			if (buf == NULL || buf->size == AES_BLOCK_SIZE) {
-				pr_info("%s: padding getting out buff\n", DRIVER_NAME);
-				err = venc_wait_for_free(&ctx->bufs, &buf);
-				if (err) {
-					pr_err("%s: wait for free buf failed with %d\n",
-					DRIVER_NAME, err);
-					goto leave;
-				}
-				memset(buf->data, 0, sizeof(buf->data));
-				buf->size = 0;
-				pr_info("%s: padding last block\n", DRIVER_NAME);
-			}
-			pkcs7_pad_block(buf->data, buf->size, sizeof(buf->data));
-			buf->size = AES_BLOCK_SIZE;
-			venc_encrypt(&ctx->cipher, buf->data, buf->size);
-			venc_move_to_used(&ctx->bufs, buf);
-
-		} else {
-			// we keep the last block in the used list, so we can
-			// workout its padding length. Then allow it to be sent.
-			buf = venc_last_used_or_null(&ctx->bufs);
-			if (buf != NULL) {				
-				buf->size = pkcs7_block_len(buf->data, buf->size);
-				pr_info("%s: decrypted size %zu\n", DRIVER_NAME, buf->size);
-			} else {
-				pr_err("%s: no last block\n", DRIVER_NAME);
-			}
-		}
-
 		/* 
 		 * drain the out buffers, then fops read will return 0 until 
 		 * next reader closes / releases.
@@ -138,7 +153,6 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 		venc_clear_drain(&ctx->bufs);
 	}
 
-leave:
 	smp_mb__before_atomic();
 	clear_bit_unlock(minor, &ctx->open_flags);
 	return err;
