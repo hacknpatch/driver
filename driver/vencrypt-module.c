@@ -16,8 +16,8 @@ module_param_named(encrypt, mod_param_encrypt, int, S_IRUGO);
 static char *mod_param_key;
 module_param_named(key, mod_param_key, charp, S_IRUGO);
 
-static int mod_param_num_buffers = 10;
-module_param_named(blocks, mod_param_num_buffers, int, S_IRUGO);
+static int mod_param_num_blocks = 10;
+module_param_named(blocks, mod_param_num_blocks, int, S_IRUGO);
 
 struct vencrypt_ctx {
 	struct cdev cdev;
@@ -263,9 +263,9 @@ static int __init venc_init(void)
 	/*
 	 * this should work with a single buffer, but I haven't tested it.	 
 	 */
-	if (mod_param_num_buffers < 3 || mod_param_num_buffers > 1000) {
+	if (mod_param_num_blocks < 3 || mod_param_num_blocks > 1000) {
 		pr_err("%s: Module param invalid blocks=%d choices: 3-1000\n",
-		       DRIVER_NAME, mod_param_num_buffers);
+		       DRIVER_NAME, mod_param_num_blocks);
 		return -EINVAL;
 	}
 
@@ -313,7 +313,7 @@ static int __init venc_init(void)
 		goto err_free_data;
 	}
 
-	driver_ctx->blocks = venc_alloc_blocks(mod_param_num_buffers);
+	driver_ctx->blocks = venc_alloc_blocks(mod_param_num_blocks);
 	if (!driver_ctx->blocks) {
 		err = -ENOMEM;
 		goto err_free_cipher;
