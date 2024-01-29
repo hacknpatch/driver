@@ -44,7 +44,7 @@ static int encode_block(struct venc_cipher *cipher, struct venc_block *block)
 	return err;
 }
 
-static int last_block_encrypt_pkcs7(struct vencrypt_ctx *ctx)
+static int pad_last_block(struct vencrypt_ctx *ctx)
 {
 	struct venc_block *block;
 	int err;
@@ -72,12 +72,12 @@ static int last_block_encrypt_pkcs7(struct vencrypt_ctx *ctx)
 	return 0;
 }
 
-static void last_block_decrypt_pkcs7(struct vencrypt_ctx *ctx)
+static void unpad_last_block(struct vencrypt_ctx *ctx)
 {
 	struct venc_block *block;
 	/* 
 	 * we keep the last block in the used list, so we can
-	 * workout its padding length. Then allow it to be sent.
+	 * workout its padding length. Then allow it to be sent with actual len.
 	 */
 	block = venc_last_used_or_null(ctx->blocks);
 	if (block != NULL)
@@ -141,9 +141,9 @@ static int venc_release(struct inode *inode, struct file *file)
 	err = 0;
 	if (minor == WRITE_MINOR) {
 		if (mod_param_encrypt)
-			err = last_block_encrypt_pkcs7(ctx);
+			err = pad_last_block(ctx);
 		else
-			last_block_decrypt_pkcs7(ctx);
+			unpad_last_block(ctx);
 
 		/* 
 		 * drain the out buffers, then fops read will return 0 until 
@@ -154,7 +154,7 @@ static int venc_release(struct inode *inode, struct file *file)
 	} else if (minor == READ_MINOR) {
 		/*
 		 * TODO: consider what to do if read exists but there is still
-		 * data in the used list?
+		 * data in the used list? trash it maybe?
 		 */
 		venc_set_drain(ctx->blocks, false);
 	}
