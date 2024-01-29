@@ -49,36 +49,6 @@ static int encode_buf(struct venc_cipher *cipher, struct venc_buffer *buf)
 	return err;
 }
 
-static int vencrypt_open(struct inode *inode, struct file *file)
-{
-	uint8_t minor;
-	struct vencrypt_ctx *ctx;
-
-	minor = iminor(inode);
-
-	if (minor == READ_MINOR && file->f_mode & FMODE_WRITE)
-		return -EPERM;
-
-	if (minor == WRITE_MINOR && (file->f_mode & FMODE_WRITE) == 0)
-		return -EPERM;
-
-	ctx = container_of(inode->i_cdev, struct vencrypt_ctx, cdev);
-
-	if (test_and_set_bit_lock(minor, &ctx->open_flags))
-		return -EBUSY;
-
-	file->private_data = ctx;
-
-	/* 
-	* Writer does encryption, so this is safe to clear IV. The unread bufs
-	* in used queue will be in the drian state until the reader closes.
-	*/
-	if (minor == WRITE_MINOR)
-		venc_zero_cipher_iv(&ctx->cipher);
-
-	return 0;
-}
-
 static int last_block_encrypt_pkcs7(struct vencrypt_ctx *ctx)
 {
 	struct venc_buffer *buf;
@@ -122,7 +92,37 @@ static void last_block_decrypt_pkcs7(struct vencrypt_ctx *ctx)
 		       DRIVER_NAME);
 }
 
-static int vencrypt_release(struct inode *inode, struct file *file)
+static int venc_open(struct inode *inode, struct file *file)
+{
+	uint8_t minor;
+	struct vencrypt_ctx *ctx;
+
+	minor = iminor(inode);
+
+	if (minor == READ_MINOR && file->f_mode & FMODE_WRITE)
+		return -EPERM;
+
+	if (minor == WRITE_MINOR && (file->f_mode & FMODE_WRITE) == 0)
+		return -EPERM;
+
+	ctx = container_of(inode->i_cdev, struct vencrypt_ctx, cdev);
+
+	if (test_and_set_bit_lock(minor, &ctx->open_flags))
+		return -EBUSY;
+
+	file->private_data = ctx;
+
+	/* 
+	* Writer does encryption, so this is safe to clear IV. The unread bufs
+	* in used queue will be in the drian state until the reader closes.
+	*/
+	if (minor == WRITE_MINOR)
+		venc_zero_cipher_iv(&ctx->cipher);
+
+	return 0;
+}
+
+static int venc_release(struct inode *inode, struct file *file)
 {
 	uint8_t minor;
 	struct vencrypt_ctx *ctx;
@@ -158,8 +158,8 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 	return err;
 }
 
-static ssize_t vencrypt_read(struct file *file, char __user *user_buf,
-			     size_t count, loff_t *offset)
+static ssize_t venc_read(struct file *file, char __user *user_buf, size_t count,
+			 loff_t *offset)
 {
 	int err;
 	uint8_t minor;
@@ -198,8 +198,8 @@ static ssize_t vencrypt_read(struct file *file, char __user *user_buf,
 	return to_copy;
 }
 
-static ssize_t vencrypt_write(struct file *file, const char __user *user_buf,
-			      size_t count, loff_t *offset)
+static ssize_t venc_write(struct file *file, const char __user *user_buf,
+			  size_t count, loff_t *offset)
 {
 	int err;
 	uint8_t minor;
@@ -234,7 +234,7 @@ static ssize_t vencrypt_write(struct file *file, const char __user *user_buf,
 	return copied;
 }
 
-static const char *get_dev_read_prefix(void)
+static const char *dev_read_prefix(void)
 {
 	switch (mod_param_encrypt) {
 	case 0:
@@ -247,7 +247,7 @@ static const char *get_dev_read_prefix(void)
 	return "invalid_r";
 }
 
-static const char *get_dev_write_prefix(void)
+static const char *dev_write_prefix(void)
 {
 	switch (mod_param_encrypt) {
 	case 0:
@@ -262,10 +262,10 @@ static const char *get_dev_write_prefix(void)
 
 static const struct file_operations vencrypt_fops = {
 	.owner = THIS_MODULE,
-	.open = vencrypt_open,
-	.read = vencrypt_read,
-	.write = vencrypt_write,
-	.release = vencrypt_release,
+	.open = venc_open,
+	.read = venc_read,
+	.write = venc_write,
+	.release = venc_release,
 };
 
 static int driver_major;
@@ -273,7 +273,7 @@ static struct class *driver_device_class;
 static dev_t driver_dev;
 static struct vencrypt_ctx *driver_ctx;
 
-static int __init vencrypt_init(void)
+static int __init venc_init(void)
 {
 	int err;
 	struct device *dev;
@@ -335,7 +335,7 @@ static int __init vencrypt_init(void)
 
 	dev = device_create(driver_device_class, NULL,
 			    MKDEV(driver_major, READ_MINOR), driver_ctx,
-			    "%s_%s", DRIVER_NAME, get_dev_read_prefix());
+			    "%s_%s", DRIVER_NAME, dev_read_prefix());
 	if (IS_ERR(dev)) {
 		err = PTR_ERR(dev);
 		goto err_free_buffers;
@@ -343,7 +343,7 @@ static int __init vencrypt_init(void)
 
 	dev = device_create(driver_device_class, NULL,
 			    MKDEV(driver_major, WRITE_MINOR), driver_ctx,
-			    "%s_%s", DRIVER_NAME, get_dev_write_prefix());
+			    "%s_%s", DRIVER_NAME, dev_write_prefix());
 	if (IS_ERR(dev)) {
 		err = PTR_ERR(dev);
 		device_destroy(driver_device_class,
@@ -375,7 +375,7 @@ err_unregister_chrdev:
 	return err;
 }
 
-static void __exit vencrypt_exit(void)
+static void __exit venc_exit(void)
 {
 	cdev_del(&driver_ctx->cdev);
 	device_destroy(driver_device_class, MKDEV(driver_major, READ_MINOR));
@@ -388,8 +388,8 @@ static void __exit vencrypt_exit(void)
 	pr_info("%s: Exited\n", DRIVER_NAME);
 }
 
-module_init(vencrypt_init);
-module_exit(vencrypt_exit);
+module_init(venc_init);
+module_exit(venc_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Greg Chalmers");
