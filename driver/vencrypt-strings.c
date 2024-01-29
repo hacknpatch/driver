@@ -6,11 +6,11 @@
 static int char_to_nibble(char c)
 {
 	if ('0' <= c && c <= '9')
-		return (unsigned char)(c - '0');
+		return (u8)(c - '0');
 	if ('A' <= c && c <= 'F')
-		return (unsigned char)(c - 'A' + 10);
+		return (u8)(c - 'A' + 10);
 	if ('a' <= c && c <= 'f')
-		return (unsigned char)(c - 'a' + 10);
+		return (u8)(c - 'a' + 10);
 	return -EINVAL;
 }
 
