@@ -93,10 +93,15 @@ static int vencrypt_release(struct inode *inode, struct file *file)
 		 */
 		if (mod_param_encrypt) {
 			buf = venc_first_free_or_null(&ctx->bufs);
-			if (buf == NULL || buf->size == AES_BLOCK_SIZE)
+			if (buf == NULL || buf->size == AES_BLOCK_SIZE) {
 				if (venc_wait_for_free(&ctx->bufs, &buf))
 					return -ERESTARTSYS;
+				memset(buf->data, 0, sizeof(buf->data));
+				buf->size = 0;
+				pr_info("%s: padding last block\n", DRIVER_NAME);
+			}
 			pkcs7_pad_block(buf->data, buf->size, sizeof(buf->data));
+			buf->size = sizeof(buf->data);
 			venc_encrypt(&ctx->cipher, buf->data, buf->size);
 			venc_move_to_used(&ctx->bufs, buf);
 		} else {
