@@ -66,13 +66,23 @@ struct venc_buffer *venc_last_used_or_null(struct venc_buffers *bufs)
 	return list_last_entry(&bufs->used, struct venc_buffer, list);
 }
 
+static
+bool venc_used_available(struct venc_buffers *bufs)
+{
+	bool available;
+	spin_lock(&bufs->lock);
+	available = bufs->used_count > 1 || bufs->drain;
+	spin_unlock(&bufs->lock);
+	return available;
+}
+
 int venc_wait_for_used(struct venc_buffers *bufs, struct venc_buffer **buf)
 {
-	// return wait_event_interruptible(
-	// 	bufs->wait, ((*buf = venc_first_used_or_null(bufs)) != NULL ||
-	// 		     READ_ONCE(bufs->drain)));
+	// int err = wait_event_interruptible(
+	// 	bufs->wait, (bufs->used_count > 1 || bufs->drain));
 	int err = wait_event_interruptible(
-		bufs->wait, (bufs->used_count > 1 || bufs->drain));
+		bufs->wait, (venc_used_available(bufs)));
+
 	if (err)
 		return err;
 
