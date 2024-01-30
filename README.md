@@ -22,8 +22,10 @@ information, see Issue #5 in GitHub.
 
 ## design
 
-Data flow follows this sequence: `write() -> blocks functions -> read()`.
-
+Data flow follows this sequences:
+* `write() -> crypto -> blocks -> read()`.
+* `writer_release() -> padding -> crypto -> blocks -> read()`.
+  
 The `struct venc_blocks`, found in `blocks.c|h`, implements a pool of blocks/buffers. It also manages synchronization 
 using a `spin_lock` and a `wait_queue`. The wait queue is utilized to notify the `reader`, `writer`, `release`, and 
 `open` functions when a new block has been added or freed, or when a final padding block is completed.
