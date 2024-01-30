@@ -9,7 +9,7 @@
  * In encryption mode `mod_param_encrypt = 1` `/dev/vencrypt_ct` is writable and
  * `/dev/vencrypt_pt` readable.
  * 
- * In decryption mode `mod_param_encrypt = 1` `/dev/vencrypt_pt` is writable and
+ * In decryption mode `mod_param_encrypt = 0` `/dev/vencrypt_pt` is writable and
  * `/dev/vencrypt_ct` readable. 
  * 
  * Data flow follows this sequences: 
