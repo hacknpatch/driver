@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* 
- * This is a simple character device driver that encrypts or decrypts data.
- * It uses a pool of buffers to store the data, and a wait queue to signal.
+ * This is a simple protoype character device driver that encrypts or decrypts
+ * data. It uses a pool of buffers to store the data, and a wait queue to 
+ * signal.
  * 
- * Data flow follows this sequence: `write() -> crypto() -> blocks() -> read()`.
+ * It creates two char devs `/dev/vencrypt_ct` and `/dev/vencrypt_pt`.
+ * In encryption mode `/dev/vencrypt_ct` is the writer and `/dev/vencrypt_pt`.
+ * In decryption mode `/dev/vencrypt_pt` is the writer and `/dev/vencrypt_ct`.
+ * 
+ * Data flow follows this sequences: 
+ * - `write() -> crypto() -> blocks() -> read()`.
+ * - `writer release() -> padding -> crypto -> blocks -> read()`.
  * 
  * The module will:
  * - Block `write()` if the buffers/blocks are full.
