@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 #ifndef __VENCRYPT_BLOCKS_H
 #define __VENCRYPT_BLOCKS_H
 
@@ -24,6 +26,13 @@ struct venc_block {
 	u8 data[AES_BLOCK_SIZE];
 };
 
+/* 
+ * The struct venc_blocks implements a pool of blocks/buffers. It also manages  
+ * synchronization using a spin_lock and a wait_queue. The wait queue is 
+ * utilized to notify the `reader`, `writer`, `release`, and  `open` functions 
+ * when a new block has been added or freed, or when a final padding block is 
+ * completed.
+ */
 struct venc_blocks {
 	struct list_head free;
 	struct list_head used;

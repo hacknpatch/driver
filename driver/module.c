@@ -1,3 +1,21 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/* 
+ * This is a simple character device driver that encrypts or decrypts data.
+ * It uses a pool of buffers to store the data, and a wait queue to signal.
+ * 
+ * Data flow follows this sequence: `write() -> crypto() -> blocks() -> read()`.
+ * 
+ * The module will:
+ * - Block `write()` if the buffers/blocks are full.
+ * - Block `read()` if the buffers/blocks are empty.
+ * - Keep the last block in the used list until `writer` is closed, at which 
+ *   point it will add PKCS7 padding.
+ * - Block the writer in `open()` if the reader is still reading or has not
+ *   drained the blocks.
+ * - Reset the IV in `open()` if writer is opening.
+ * - Only allow a signle reader or writer at a time, returns -EBUSY if already
+ *   open.
+ */
 #include <linux/module.h>
 #include <linux/cdev.h>
 

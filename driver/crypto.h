@@ -1,11 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 #ifndef __VENCRYPT_CRYPTO_H
 #define __VENCRYPT_CRYPTO_H
 
-#include <linux/crypto.h> // for struct crypto_skcipher
-#include <linux/scatterlist.h> // for struct scatterlist
-#include <linux/crypto.h> // for struct crypto_wait
-#include <crypto/skcipher.h> // for struct skcipher_request
-#include <linux/types.h> // for bool and u8
+#include <linux/crypto.h>
+#include <linux/scatterlist.h>
+#include <linux/crypto.h>
+#include <crypto/skcipher.h>
+#include <linux/types.h>
 
 #define AES_MIN_KEY_SIZE 16
 #define AES_MAX_KEY_SIZE 32
