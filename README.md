@@ -57,16 +57,20 @@ Set the module parameter to encrypt=0 to input encrypted data at `/dev/vencrypt_
 ### encrypt
 ```shell
 ../mod_install.sh 1
+
 echo "hello" > /dev/vencrypt_pt
 cat /dev/vencrypt_ct | base64
+
 $ WasyktyxbiO5e0zq2dDDwA==
 ```
 
 ### decrypt
 ```shell
 ../mod_install.sh 0
+
 echo "WasyktyxbiO5e0zq2dDDwA==" | base64 -d > /dev/vencrypt_ct
 cat /dev/vencrypt_pt
+
 $ hello
 ```
 

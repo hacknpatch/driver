@@ -5,8 +5,12 @@
  * signal.
  * 
  * It creates two char devs `/dev/vencrypt_ct` and `/dev/vencrypt_pt`.
- * In encryption mode `/dev/vencrypt_ct` is the writer and `/dev/vencrypt_pt`.
- * In decryption mode `/dev/vencrypt_pt` is the writer and `/dev/vencrypt_ct`.
+ * 
+ * In encryption mode `mod_param_encrypt = 1` `/dev/vencrypt_ct` is writable and
+ * `/dev/vencrypt_pt` readable.
+ * 
+ * In decryption mode `mod_param_encrypt = 1` `/dev/vencrypt_pt` is writable and
+ * `/dev/vencrypt_ct` readable. 
  * 
  * Data flow follows this sequences: 
  * - `write() -> crypto() -> blocks() -> read()`.
